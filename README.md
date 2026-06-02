@@ -46,11 +46,11 @@ ignored by git.
 
 ### OpenAI OAuth
 
-The sidebar exposes three local controls:
+The sidebar exposes one OpenAI control:
 
-- `OpenAI 로그인 시작` runs `npx @openai/codex login`.
-- `OpenAI proxy 시작` runs `npm run llm:proxy`.
-- `OpenAI 연결 확인` checks the local proxy at `OPENAI_OAUTH_BASE_URL`.
+- `OpenAI OAuth 연동` checks the local proxy, starts `npx @openai/codex login`
+  when no local `auth.json` is available, or starts `npm run llm:proxy` when
+  credentials already exist.
 
 Natural-language parsing uses the npm `openai-oauth` proxy through the Node
 sidecar. Treat local `auth.json` and `.openai-oauth/` contents as

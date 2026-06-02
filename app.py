@@ -78,6 +78,10 @@ def default_task_rows() -> list[dict[str, Any]]:
     ]
 
 
+def integration_button_labels() -> list[str]:
+    return ["Google Calendar 연동", "OpenAI OAuth 연동"]
+
+
 def build_structured_input(
     *,
     plan_date: date,
@@ -317,101 +321,105 @@ def _consume_google_oauth_callback(config: GoogleOAuthConfig) -> None:
 def render_google_calendar_controls() -> None:
     st.sidebar.subheader("Google Calendar")
     config = build_google_oauth_config()
+    google_label = integration_button_labels()[0]
     if config is None:
         st.sidebar.caption("GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI 필요")
-        st.sidebar.button("Google Calendar 로그인", disabled=True)
-        st.sidebar.button("Google Calendar 일정 불러오기", disabled=True)
-        st.sidebar.button("Google Calendar로 내보내기", disabled=True)
+        st.sidebar.button(google_label, disabled=True)
         return
 
     _consume_google_oauth_callback(config)
     token_ready = config.token_file.exists()
     st.sidebar.caption("연결됨" if token_ready else "로그인 필요")
 
-    if st.sidebar.button("Google Calendar 로그인"):
-        try:
-            auth_url, state = build_authorization_url(
-                create_flow(config),
-                redirect_uri=config.redirect_uri,
-            )
-        except Exception as exc:
-            st.sidebar.error(f"Google OAuth URL 생성 실패: {exc}")
-        else:
-            st.session_state["google_auth_url"] = auth_url
-            st.session_state["google_oauth_state"] = state
-
-    if st.session_state.get("google_auth_url"):
-        st.sidebar.link_button("Google 로그인 열기", st.session_state["google_auth_url"])
-
     import_date = st.sidebar.date_input(
         "Calendar 가져올 날짜",
         value=st.session_state.get("selected_plan_date", date.today()),
         key="google_calendar_import_date",
     )
-    if st.sidebar.button("Google Calendar 일정 불러오기"):
+    if st.sidebar.button(google_label):
         try:
-            service = _load_google_calendar_service(config)
-            if service is None:
-                st.sidebar.warning("Google Calendar 로그인이 필요합니다.")
+            if not token_ready:
+                auth_url, state = build_authorization_url(
+                    create_flow(config),
+                    redirect_uri=config.redirect_uri,
+                )
+                st.session_state["google_auth_url"] = auth_url
+                st.session_state["google_oauth_state"] = state
+                st.sidebar.info("Google 로그인 링크를 열어 인증을 완료하세요.")
                 return
-            imported_events = import_fixed_events_for_day(
-                service,
-                target_date=import_date,
-                timezone="Asia/Seoul",
-            )
-        except Exception as exc:
-            st.sidebar.error(f"Google Calendar 불러오기 실패: {exc}")
-        else:
-            current_rows = st.session_state.get("fixed_event_rows") or default_fixed_event_rows()
-            st.session_state["fixed_event_rows"] = merge_fixed_event_rows(
-                list(current_rows),
-                imported_events,
-            )
-            st.session_state["fixed_events_editor_version"] = (
-                st.session_state.get("fixed_events_editor_version", 0) + 1
-            )
-            st.sidebar.success(f"{len(imported_events)}개 일정 불러옴")
 
-    if st.sidebar.button("Google Calendar로 내보내기"):
+            service = _load_google_calendar_service(config)
+        except Exception as exc:
+            st.sidebar.error(f"Google Calendar 연동 실패: {exc}")
+            return
+        if service is None:
+            st.sidebar.warning("Google Calendar 로그인이 필요합니다.")
+            return
+
+        imported_events = import_fixed_events_for_day(
+            service,
+            target_date=import_date,
+            timezone="Asia/Seoul",
+        )
+        current_rows = st.session_state.get("fixed_event_rows") or default_fixed_event_rows()
+        st.session_state["fixed_event_rows"] = merge_fixed_event_rows(
+            list(current_rows),
+            imported_events,
+        )
+        st.session_state["fixed_events_editor_version"] = (
+            st.session_state.get("fixed_events_editor_version", 0) + 1
+        )
+
         plan_input = st.session_state.get("plan_input")
         planner_state = st.session_state.get("planner_state") or {}
         items = exportable_schedule_items(planner_state)
-        if not plan_input or not items:
-            st.sidebar.warning("승인된 작업 일정이 필요합니다.")
-            return
-        try:
-            service = _load_google_calendar_service(config)
-            if service is None:
-                st.sidebar.warning("Google Calendar 로그인이 필요합니다.")
+        exported: list[dict[str, Any]] = []
+        if plan_input and items:
+            try:
+                exported = export_schedule_items(
+                    service,
+                    items,
+                    plan_date=plan_input.date,
+                    day_start=plan_input.day_start,
+                    timezone=plan_input.timezone,
+                )
+            except Exception as exc:
+                st.sidebar.error(f"Google Calendar 내보내기 실패: {exc}")
                 return
-            exported = export_schedule_items(
-                service,
-                items,
-                plan_date=plan_input.date,
-                day_start=plan_input.day_start,
-                timezone=plan_input.timezone,
-            )
-        except Exception as exc:
-            st.sidebar.error(f"Google Calendar 내보내기 실패: {exc}")
-        else:
-            st.sidebar.success(f"{len(exported)}개 작업 내보냄")
+
+        st.sidebar.success(
+            f"{len(imported_events)}개 일정 불러옴, {len(exported)}개 작업 내보냄"
+        )
+
+    if st.session_state.get("google_auth_url"):
+        st.sidebar.markdown(
+            f"[Google 로그인 페이지 열기]({st.session_state['google_auth_url']})"
+        )
 
 
 def render_openai_oauth_controls() -> None:
     st.sidebar.subheader("OpenAI OAuth")
     auth_file = find_existing_auth_file()
     st.sidebar.caption("auth.json 감지됨" if auth_file else "auth.json 없음")
+    openai_label = integration_button_labels()[1]
 
-    if st.sidebar.button("OpenAI 로그인 시작"):
-        try:
-            process = start_codex_login(cwd=PROJECT_ROOT)
-        except Exception as exc:
-            st.sidebar.error(f"OpenAI 로그인 시작 실패: {exc}")
-        else:
-            st.session_state["openai_login_pid"] = process.pid
-            st.sidebar.success(f"로그인 프로세스 시작: {process.pid}")
+    if st.sidebar.button(openai_label):
+        status = check_openai_oauth_proxy()
+        if status.connected:
+            suffix = f" ({', '.join(status.models[:3])})" if status.models else ""
+            st.sidebar.success(f"연결됨{suffix}")
+            return
 
-    if st.sidebar.button("OpenAI proxy 시작"):
+        if not auth_file:
+            try:
+                process = start_codex_login(cwd=PROJECT_ROOT)
+            except Exception as exc:
+                st.sidebar.error(f"OpenAI 로그인 시작 실패: {exc}")
+            else:
+                st.session_state["openai_login_pid"] = process.pid
+                st.sidebar.success(f"로그인 프로세스 시작: {process.pid}")
+            return
+
         try:
             process = start_openai_oauth_proxy(cwd=PROJECT_ROOT)
         except Exception as exc:
@@ -419,14 +427,6 @@ def render_openai_oauth_controls() -> None:
         else:
             st.session_state["openai_proxy_pid"] = process.pid
             st.sidebar.success(f"proxy 프로세스 시작: {process.pid}")
-
-    if st.sidebar.button("OpenAI 연결 확인"):
-        status = check_openai_oauth_proxy()
-        if status.connected:
-            suffix = f" ({', '.join(status.models[:3])})" if status.models else ""
-            st.sidebar.success(f"연결됨{suffix}")
-        else:
-            st.sidebar.error(status.message)
 
 
 def render_auth_sidebar() -> None:
