@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import time
 
 from planner.models import (
+    BufferSummary,
     DayPlanInput,
     DraftPlan,
     FeasibilityStatus,
@@ -12,6 +13,7 @@ from planner.models import (
     ScheduleItem,
     UnassignedReasonCode,
     ValidationIssue,
+    ValidationResult,
 )
 
 
@@ -141,6 +143,51 @@ def validate_schedule_overlaps(items: list[ScheduleItem]) -> list[ValidationIssu
                 )
             )
     return issues
+
+
+def build_buffer_summary(
+    remaining_blocks: list,
+    target_buffer_minutes: int,
+) -> BufferSummary:
+    secured_minutes = sum(block.duration_minutes for block in remaining_blocks)
+    return BufferSummary(
+        target_minutes=target_buffer_minutes,
+        secured_minutes=secured_minutes,
+    )
+
+
+def validate_draft_plan(draft_plan: DraftPlan) -> ValidationResult:
+    issues = validate_schedule_overlaps(draft_plan.schedule_items)
+
+    for item in draft_plan.schedule_items:
+        if item.type.value == "task" and not item.reason:
+            issues.append(
+                ValidationIssue(
+                    code="MISSING_PLACEMENT_REASON",
+                    message=f"{item.title}의 배치 이유가 없습니다.",
+                    blocking=False,
+                    source_id=item.source_id,
+                    source_type="task",
+                )
+            )
+
+    buffer_summary = build_buffer_summary(
+        draft_plan.free_blocks,
+        draft_plan.target_buffer_minutes,
+    )
+    if buffer_summary.shortage_minutes > 0:
+        issues.append(
+            ValidationIssue(
+                code="BUFFER_SHORTAGE",
+                message=(
+                    f"목표 buffer {buffer_summary.target_minutes}분 중 "
+                    f"{buffer_summary.secured_minutes}분만 확보되었습니다."
+                ),
+                blocking=False,
+            )
+        )
+
+    return ValidationResult(issues=issues, buffer_summary=buffer_summary)
 
 
 def determine_feasibility(
