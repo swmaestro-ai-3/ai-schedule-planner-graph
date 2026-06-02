@@ -6,6 +6,8 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
+    "llm:proxy": "openai-oauth",
+    "llm:sidecar": "node llm_sidecar/openai_oauth_client.mjs",
     "test": "pytest -q",
     "test:python": "pytest -q"
   },
