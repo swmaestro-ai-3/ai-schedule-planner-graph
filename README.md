@@ -27,24 +27,19 @@ npm test
 streamlit run app.py
 ```
 
-## Integrations
+## MVP Flow
 
-### Google Calendar
+The Streamlit MVP is organized around four roles:
 
-Create a Google OAuth web client and set these values in `.env`:
+- `사용자 입력`: enter fixed events and tasks through natural-language or structured tabs.
+- `AI 배치 제안`: view the proposed schedule as both a table and local day calendar.
+- `사용자 검증 및 피드백`: review warnings, unassigned tasks, and buffer status.
+- `AI 재배치 / 확정`: apply user feedback or approve the final plan.
 
-```bash
-GOOGLE_OAUTH_CLIENT_ID=...
-GOOGLE_OAUTH_CLIENT_SECRET=...
-GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8501
-GOOGLE_TOKEN_FILE=.google-calendar-token.json
-```
+Google Calendar helper code remains available for future integration, but the
+MVP UI uses the local calendar view instead of an external calendar connection.
 
-The app uses `https://www.googleapis.com/auth/calendar.events` so it can import
-timed events and export approved planner tasks. The generated token file is
-ignored by git.
-
-### OpenAI OAuth
+## OpenAI OAuth
 
 The sidebar exposes one OpenAI control:
 
