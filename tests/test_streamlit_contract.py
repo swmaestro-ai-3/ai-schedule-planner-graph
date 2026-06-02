@@ -6,6 +6,7 @@ from app import (
     build_structured_input,
     exportable_schedule_items,
     fixed_events_to_editor_rows,
+    fixed_event_editor_column_labels,
     integration_button_labels,
     merge_fixed_event_rows,
     mvp_sidebar_integration_labels,
@@ -13,6 +14,9 @@ from app import (
     schedule_items_to_calendar_blocks,
     schedule_items_to_rows,
     should_show_openai_oauth_button,
+    structured_input_action_labels,
+    structured_input_section_titles,
+    task_editor_column_labels,
     validation_panel_rows,
     warning_summary_rows,
 )
@@ -59,6 +63,39 @@ def test_structured_input_adapter_builds_day_plan_input():
 
     assert plan_input.fixed_events[0].title == "전공 수업"
     assert plan_input.tasks[0].focus_type == "deep"
+
+
+def test_structured_input_sections_are_user_facing():
+    assert structured_input_section_titles() == [
+        "계획 기준",
+        "고정 일정",
+        "배치할 작업",
+    ]
+
+
+def test_structured_input_has_top_and_bottom_actions():
+    assert structured_input_action_labels() == [
+        "현재 입력으로 일정안 생성",
+        "일정안 생성",
+    ]
+
+
+def test_structured_editor_columns_use_user_facing_labels():
+    assert fixed_event_editor_column_labels() == {
+        "id": "ID",
+        "title": "일정명",
+        "start_time": "시작",
+        "end_time": "종료",
+        "category": "분류",
+    }
+    assert task_editor_column_labels() == {
+        "id": "ID",
+        "title": "작업명",
+        "estimated_minutes": "예상분",
+        "priority": "우선순위",
+        "splittable": "분할",
+        "focus_type": "작업 유형",
+    }
 
 
 def test_schedule_items_to_rows_formats_offsets():

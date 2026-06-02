@@ -88,6 +88,78 @@ def should_show_openai_oauth_button(status: OpenAIOAuthStatus) -> bool:
     return not status.connected
 
 
+def structured_input_section_titles() -> list[str]:
+    return ["계획 기준", "고정 일정", "배치할 작업"]
+
+
+def structured_input_action_labels() -> list[str]:
+    return ["현재 입력으로 일정안 생성", "일정안 생성"]
+
+
+def fixed_event_editor_column_labels() -> dict[str, str]:
+    return {
+        "id": "ID",
+        "title": "일정명",
+        "start_time": "시작",
+        "end_time": "종료",
+        "category": "분류",
+    }
+
+
+def task_editor_column_labels() -> dict[str, str]:
+    return {
+        "id": "ID",
+        "title": "작업명",
+        "estimated_minutes": "예상분",
+        "priority": "우선순위",
+        "splittable": "분할",
+        "focus_type": "작업 유형",
+    }
+
+
+def fixed_event_editor_column_config() -> dict[str, Any]:
+    labels = fixed_event_editor_column_labels()
+    return {
+        "id": st.column_config.TextColumn(labels["id"], width="small"),
+        "title": st.column_config.TextColumn(labels["title"], width="medium", required=True),
+        "start_time": st.column_config.TimeColumn(labels["start_time"], format="HH:mm"),
+        "end_time": st.column_config.TimeColumn(labels["end_time"], format="HH:mm"),
+        "category": st.column_config.TextColumn(labels["category"], width="small"),
+    }
+
+
+def task_editor_column_config() -> dict[str, Any]:
+    labels = task_editor_column_labels()
+    return {
+        "id": st.column_config.TextColumn(labels["id"], width="small"),
+        "title": st.column_config.TextColumn(labels["title"], width="medium", required=True),
+        "estimated_minutes": st.column_config.NumberColumn(
+            labels["estimated_minutes"],
+            min_value=1,
+            step=15,
+            width="small",
+        ),
+        "priority": st.column_config.NumberColumn(
+            labels["priority"],
+            min_value=1,
+            max_value=5,
+            step=1,
+            width="small",
+        ),
+        "splittable": st.column_config.CheckboxColumn(labels["splittable"], width="small"),
+        "focus_type": st.column_config.SelectboxColumn(
+            labels["focus_type"],
+            options=["deep", "light", "any"],
+            width="small",
+            format_func=lambda value: {
+                "deep": "Deep",
+                "light": "Light",
+                "any": "Any",
+            }.get(value, value),
+        ),
+    }
+
+
 def mvp_sidebar_integration_labels(*, openai_status: OpenAIOAuthStatus) -> list[str]:
     labels: list[str] = []
     if should_show_openai_oauth_button(openai_status):
@@ -614,6 +686,28 @@ def reset_replan_session_state() -> None:
     st.session_state.pop("rejection_reason", None)
 
 
+def submit_structured_plan(
+    *,
+    plan_date: date,
+    day_start: time,
+    day_end: time,
+    buffer_ratio: float,
+    fixed_event_rows: list[dict[str, Any]],
+    task_rows: list[dict[str, Any]],
+) -> None:
+    plan_input = build_structured_input(
+        plan_date=plan_date,
+        day_start=day_start,
+        day_end=day_end,
+        buffer_ratio=buffer_ratio,
+        fixed_event_rows=list(fixed_event_rows),
+        task_rows=list(task_rows),
+    )
+    reset_replan_session_state()
+    st.session_state["plan_input"] = plan_input
+    st.session_state["planner_state"] = run_planner(plan_input)
+
+
 def _query_value(name: str) -> str | None:
     value = st.query_params.get(name)
     if isinstance(value, list):
@@ -784,36 +878,69 @@ def render_auth_sidebar() -> None:
 
 
 def render_structured_tab() -> None:
-    plan_date = st.date_input("날짜", value=date(2026, 6, 3))
+    settings_title, fixed_title, task_title = structured_input_section_titles()
+    top_action_label, bottom_action_label = structured_input_action_labels()
+
+    st.markdown(f"#### {settings_title}")
+    settings_cols = st.columns([1.15, 1.0, 1.0, 1.35])
+    plan_date = settings_cols[0].date_input("날짜", value=date(2026, 6, 3))
     st.session_state["selected_plan_date"] = plan_date
-    left, middle, right = st.columns(3)
-    day_start = left.time_input("하루 시작", value=time(9, 0))
-    day_end = middle.time_input("하루 종료", value=time(23, 0))
-    buffer_ratio = right.slider("Buffer ratio", 0.0, 0.5, 0.1, 0.05)
+    day_start = settings_cols[1].time_input("하루 시작", value=time(9, 0))
+    day_end = settings_cols[2].time_input("하루 종료", value=time(23, 0))
+    buffer_ratio = settings_cols[3].slider("여유 비율", 0.0, 0.5, 0.1, 0.05)
 
     if "fixed_event_rows" not in st.session_state:
         st.session_state["fixed_event_rows"] = default_fixed_event_rows()
     if "task_rows" not in st.session_state:
         st.session_state["task_rows"] = default_task_rows()
 
+    action_cols = st.columns([0.36, 0.64])
+    if action_cols[0].button(top_action_label, type="primary", key="structured_generate_top"):
+        submit_structured_plan(
+            plan_date=plan_date,
+            day_start=day_start,
+            day_end=day_end,
+            buffer_ratio=buffer_ratio,
+            fixed_event_rows=list(st.session_state["fixed_event_rows"]),
+            task_rows=list(st.session_state["task_rows"]),
+        )
+
+    st.markdown(f"#### {fixed_title}")
+    st.caption("수업, 회의, 약속처럼 이미 시간이 정해진 일정을 입력합니다.")
     fixed_event_rows = st.data_editor(
         st.session_state["fixed_event_rows"],
+        column_config=fixed_event_editor_column_config(),
+        column_order=("id", "title", "start_time", "end_time", "category"),
+        hide_index=True,
         num_rows="dynamic",
         width="stretch",
         key=f"fixed_events_{st.session_state.get('fixed_events_editor_version', 0)}",
     )
     st.session_state["fixed_event_rows"] = list(fixed_event_rows)
 
+    st.markdown(f"#### {task_title}")
+    st.caption("AI가 free block에 배치할 작업을 입력합니다.")
     task_rows = st.data_editor(
         st.session_state["task_rows"],
+        column_config=task_editor_column_config(),
+        column_order=(
+            "id",
+            "title",
+            "estimated_minutes",
+            "priority",
+            "splittable",
+            "focus_type",
+        ),
+        hide_index=True,
         num_rows="dynamic",
         width="stretch",
         key="tasks",
     )
     st.session_state["task_rows"] = list(task_rows)
 
-    if st.button("일정안 생성", type="primary"):
-        plan_input = build_structured_input(
+    st.divider()
+    if st.button(bottom_action_label, type="primary", key="structured_generate_bottom"):
+        submit_structured_plan(
             plan_date=plan_date,
             day_start=day_start,
             day_end=day_end,
@@ -821,9 +948,6 @@ def render_structured_tab() -> None:
             fixed_event_rows=list(fixed_event_rows),
             task_rows=list(task_rows),
         )
-        reset_replan_session_state()
-        st.session_state["plan_input"] = plan_input
-        st.session_state["planner_state"] = run_planner(plan_input)
 
 
 def render_natural_language_tab() -> None:
