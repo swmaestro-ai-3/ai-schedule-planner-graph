@@ -4,7 +4,10 @@ import pytest
 
 from planner.llm_parser import (
     LLMParserError,
+    build_day_plan_parse_payload,
+    build_rejection_interpretation_payload,
     build_clarification_questions,
+    call_llm_sidecar,
     interpret_rejection_reason,
     parse_natural_language_input,
 )
@@ -14,6 +17,9 @@ from planner.models import DayPlanInput, ValidationIssue
 def test_fake_sidecar_output_becomes_day_plan_input():
     def fake_sidecar(payload):
         assert payload["task"] == "parse_day_plan"
+        assert "DayPlanInput" in payload["prompt"]
+        assert payload["reference_date"] == "2026-06-02"
+        assert payload["output_schema"]["required"] == ["day_plan"]
         return {
             "day_plan": {
                 "date": "2026-06-03",
@@ -33,11 +39,66 @@ def test_fake_sidecar_output_becomes_day_plan_input():
             }
         }
 
-    result = parse_natural_language_input("내일 알고리즘 과제 2시간", sidecar=fake_sidecar)
+    result = parse_natural_language_input(
+        "내일 알고리즘 과제 2시간",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 2),
+    )
 
     assert isinstance(result, DayPlanInput)
     assert result.date == date(2026, 6, 3)
     assert result.day_start == time(9, 0)
+
+
+def test_day_plan_parse_payload_includes_prompt_schema_and_context():
+    payload = build_day_plan_parse_payload(
+        "6월 3일 9시부터 23시까지 과제 계획해줘",
+        reference_date=date(2026, 6, 2),
+        timezone="Asia/Seoul",
+    )
+
+    assert payload["task"] == "parse_day_plan"
+    assert payload["input"] == "6월 3일 9시부터 23시까지 과제 계획해줘"
+    assert payload["reference_date"] == "2026-06-02"
+    assert payload["timezone"] == "Asia/Seoul"
+    assert "JSON만" in payload["prompt"]
+    assert "fixed_events" in payload["output_schema"]["properties"]["day_plan"]["properties"]
+    assert "tasks" in payload["output_schema"]["properties"]["day_plan"]["properties"]
+
+
+def test_rejection_interpretation_payload_asks_for_replan_constraints():
+    payload = build_rejection_interpretation_payload(
+        "너무 빡빡하니 여유 시간을 늘려줘",
+        current_state={"replan_count": 1},
+    )
+
+    assert payload["task"] == "interpret_rejection"
+    assert payload["input"] == "너무 빡빡하니 여유 시간을 늘려줘"
+    assert "ReplanConstraints" in payload["prompt"]
+    assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+
+
+def test_ai_rejection_interpreter_can_use_sidecar_response():
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0.2,
+                "excluded_task_ids": ["task-low"],
+                "preferred_windows": {},
+                "fixed_event_buffer_after": 15,
+                "notes": ["사용자가 여유와 회의 직후 buffer를 요청했습니다."],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "너무 빡빡하고 회의 직후에는 쉬고 싶어",
+        sidecar=fake_sidecar,
+    )
+
+    assert constraints.buffer_ratio_delta == 0.2
+    assert constraints.excluded_task_ids == ["task-low"]
+    assert constraints.fixed_event_buffer_after == 15
 
 
 def test_missing_date_validation_error_creates_clarification_question():
@@ -81,3 +142,20 @@ def test_invalid_sidecar_output_retries_then_errors():
         )
 
     assert calls["count"] == 2
+
+
+def test_call_llm_sidecar_wraps_process_errors(monkeypatch):
+    class FailedProcess(Exception):
+        pass
+
+    def fake_run(*args, **kwargs):
+        raise FailedProcess("proxy unavailable")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+
+    try:
+        call_llm_sidecar({"task": "parse_day_plan"})
+    except LLMParserError as exc:
+        assert "proxy unavailable" in str(exc)
+    else:
+        raise AssertionError("expected LLMParserError")
