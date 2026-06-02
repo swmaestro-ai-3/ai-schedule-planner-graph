@@ -6,3 +6,5 @@ __pycache__/
 .streamlit/secrets.toml
 node_modules/
 .openai-oauth/
+.google-calendar-token.json
+google-credentials.json
