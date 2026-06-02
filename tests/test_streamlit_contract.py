@@ -6,6 +6,7 @@ from app import (
     build_structured_input,
     exportable_schedule_items,
     fixed_events_to_editor_rows,
+    integration_button_labels,
     merge_fixed_event_rows,
     schedule_items_to_rows,
     warning_summary_rows,
@@ -191,3 +192,10 @@ def test_build_google_oauth_config_resolves_relative_token_file(tmp_path):
     assert config.client_id == "client-id"
     assert config.token_file == tmp_path / "tokens" / "google.json"
     assert build_google_oauth_config(env={}, cwd=Path("/tmp")) is None
+
+
+def test_integration_button_labels_are_one_per_provider():
+    assert integration_button_labels() == [
+        "Google Calendar 연동",
+        "OpenAI OAuth 연동",
+    ]
