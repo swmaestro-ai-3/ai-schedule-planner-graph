@@ -4,3 +4,7 @@ langchain>=0.2
 pydantic>=2.7
 pytest>=8.2
 python-dotenv>=1.0
+google-api-python-client>=2.131
+google-auth>=2.29
+google-auth-httplib2>=0.2
+google-auth-oauthlib>=1.2
