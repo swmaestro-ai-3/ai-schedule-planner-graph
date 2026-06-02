@@ -1,0 +1,15 @@
+{
+  "name": "ai-schedule-planner-graph",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LangGraph-based daily schedule planner MVP with a Node OAuth LLM sidecar.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "test": "pytest -q",
+    "test:python": "pytest -q"
+  },
+  "dependencies": {
+    "openai-oauth": "1.0.2"
+  }
+}
