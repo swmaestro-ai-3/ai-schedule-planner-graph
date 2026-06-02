@@ -34,6 +34,7 @@ from planner.models import (
     ValidationIssue,
 )
 from planner.openai_oauth import (
+    OpenAIOAuthStatus,
     check_openai_oauth_proxy,
     find_existing_auth_file,
     start_codex_login,
@@ -80,6 +81,10 @@ def default_task_rows() -> list[dict[str, Any]]:
 
 def integration_button_labels() -> list[str]:
     return ["Google Calendar 연동", "OpenAI OAuth 연동"]
+
+
+def should_show_openai_oauth_button(status: OpenAIOAuthStatus) -> bool:
+    return not status.connected
 
 
 def build_structured_input(
@@ -400,16 +405,19 @@ def render_google_calendar_controls() -> None:
 def render_openai_oauth_controls() -> None:
     st.sidebar.subheader("OpenAI OAuth")
     auth_file = find_existing_auth_file()
-    st.sidebar.caption("auth.json 감지됨" if auth_file else "auth.json 없음")
+    status = check_openai_oauth_proxy()
+    if status.connected:
+        suffix = f" ({', '.join(status.models[:3])})" if status.models else ""
+        st.sidebar.caption(f"연결됨{suffix}")
+    else:
+        st.sidebar.caption("auth.json 감지됨" if auth_file else "auth.json 없음")
+
+    if not should_show_openai_oauth_button(status):
+        return
+
     openai_label = integration_button_labels()[1]
 
     if st.sidebar.button(openai_label):
-        status = check_openai_oauth_proxy()
-        if status.connected:
-            suffix = f" ({', '.join(status.models[:3])})" if status.models else ""
-            st.sidebar.success(f"연결됨{suffix}")
-            return
-
         if not auth_file:
             try:
                 process = start_codex_login(cwd=PROJECT_ROOT)

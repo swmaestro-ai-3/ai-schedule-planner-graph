@@ -9,6 +9,7 @@ from app import (
     integration_button_labels,
     merge_fixed_event_rows,
     schedule_items_to_rows,
+    should_show_openai_oauth_button,
     warning_summary_rows,
 )
 from planner.models import (
@@ -21,6 +22,7 @@ from planner.models import (
     UnassignedTask,
     ValidationIssue,
 )
+from planner.openai_oauth import OpenAIOAuthStatus
 
 
 def test_structured_input_adapter_builds_day_plan_input():
@@ -199,3 +201,25 @@ def test_integration_button_labels_are_one_per_provider():
         "Google Calendar 연동",
         "OpenAI OAuth 연동",
     ]
+
+
+def test_openai_oauth_button_hides_when_proxy_is_connected():
+    assert (
+        should_show_openai_oauth_button(
+            OpenAIOAuthStatus(
+                connected=True,
+                message="connected",
+                models=["gpt-5"],
+            )
+        )
+        is False
+    )
+    assert (
+        should_show_openai_oauth_button(
+            OpenAIOAuthStatus(
+                connected=False,
+                message="not connected",
+            )
+        )
+        is True
+    )
