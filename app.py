@@ -674,6 +674,7 @@ def render_user_feedback_section(state: dict[str, Any], plan_input: DayPlanInput
                 "approval_status": "rejected",
                 "rejection_reason": rejection_reason,
                 "replan_count": state.get("replan_count", 0),
+                "use_llm_replan": check_openai_oauth_proxy().connected,
             }
         )
         st.session_state["previous_schedule_items"] = previous_items

@@ -35,5 +35,6 @@ class PlannerState(TypedDict, total=False):
     rejection_reason: str
     replan_constraints: ReplanConstraints
     replan_count: int
+    use_llm_replan: bool
     final_plan: FinalPlanOutput
     schedule_items: list[ScheduleItem]

@@ -101,6 +101,27 @@ def test_ai_rejection_interpreter_can_use_sidecar_response():
     assert constraints.fixed_event_buffer_after == 15
 
 
+def test_ai_rejection_interpreter_normalizes_tiny_after_event_buffer():
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0.2,
+                "excluded_task_ids": [],
+                "preferred_windows": {},
+                "fixed_event_buffer_after": 1,
+                "notes": ["회의 직후 휴식"],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "회의 직후에는 쉬고 싶어",
+        sidecar=fake_sidecar,
+    )
+
+    assert constraints.fixed_event_buffer_after == 15
+
+
 def test_missing_date_validation_error_creates_clarification_question():
     questions = build_clarification_questions(
         [

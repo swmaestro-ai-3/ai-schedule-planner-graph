@@ -159,6 +159,18 @@ def _interpret_rejection_reason_with_rules(
     return constraints
 
 
+def _normalize_replan_constraints(
+    constraints: ReplanConstraints,
+    reason: str,
+) -> ReplanConstraints:
+    if (
+        ("회의 직후" in reason or "수업 직후" in reason or "직후에는 쉬" in reason)
+        and constraints.fixed_event_buffer_after < 15
+    ):
+        return constraints.model_copy(update={"fixed_event_buffer_after": 15})
+    return constraints
+
+
 def interpret_rejection_reason(
     reason: str,
     current_state: dict[str, Any] | None = None,
@@ -172,8 +184,11 @@ def interpret_rejection_reason(
                 response = sidecar(
                     build_rejection_interpretation_payload(reason, current_state)
                 )
-                return ReplanConstraints.model_validate(
-                    response.get("replan_constraints", response)
+                return _normalize_replan_constraints(
+                    ReplanConstraints.model_validate(
+                        response.get("replan_constraints", response)
+                    ),
+                    reason,
                 )
             except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
                 last_error = exc
@@ -181,4 +196,4 @@ def interpret_rejection_reason(
     constraints = _interpret_rejection_reason_with_rules(reason)
     if last_error is not None:
         constraints.notes.append(f"LLM 피드백 해석 fallback: {last_error}")
-    return constraints
+    return _normalize_replan_constraints(constraints, reason)

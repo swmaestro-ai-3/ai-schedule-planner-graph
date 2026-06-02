@@ -27,15 +27,23 @@ def compute_free_blocks(
     sorted_events = sorted(normalized_events, key=lambda event: event.start_offset)
 
     for event in sorted_events:
-        if event.start_offset > cursor:
+        reserved_start = max(
+            day_start_offset,
+            event.start_offset - event.buffer_before_minutes,
+        )
+        reserved_end = min(
+            day_end_offset,
+            event.end_offset + event.buffer_after_minutes,
+        )
+        if reserved_start > cursor:
             blocks.append(
                 FreeBlock(
                     id=f"free-{len(blocks) + 1}",
                     start_offset=cursor,
-                    end_offset=event.start_offset,
+                    end_offset=reserved_start,
                 )
             )
-        cursor = max(cursor, event.end_offset)
+        cursor = max(cursor, reserved_end)
 
     if cursor < day_end_offset:
         blocks.append(

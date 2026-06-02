@@ -3,6 +3,7 @@ from __future__ import annotations
 from io import BytesIO
 
 from planner.openai_oauth import (
+    DEFAULT_OPENAI_OAUTH_MODELS,
     DEFAULT_OPENAI_OAUTH_BASE_URL,
     OpenAIOAuthProcess,
     build_codex_login_command,
@@ -57,7 +58,22 @@ def test_find_existing_auth_file_returns_first_match(tmp_path):
 
 def test_build_commands_match_package_scripts():
     assert build_codex_login_command() == ["npx", "@openai/codex", "login"]
-    assert build_proxy_command() == ["npm", "run", "llm:proxy"]
+    assert build_proxy_command() == [
+        "npm",
+        "run",
+        "llm:proxy",
+        "--",
+        "--models",
+        ",".join(DEFAULT_OPENAI_OAUTH_MODELS),
+    ]
+    assert build_proxy_command(env={"OPENAI_OAUTH_MODELS": "gpt-5.4"}) == [
+        "npm",
+        "run",
+        "llm:proxy",
+        "--",
+        "--models",
+        "gpt-5.4",
+    ]
 
 
 def test_start_process_helpers_return_pid_and_command(tmp_path):
@@ -71,7 +87,8 @@ def test_start_process_helpers_return_pid_and_command(tmp_path):
     proxy = start_openai_oauth_proxy(popen=fake_popen, cwd=tmp_path)
 
     assert login == OpenAIOAuthProcess(pid=12345, command=["npx", "@openai/codex", "login"])
-    assert proxy == OpenAIOAuthProcess(pid=12345, command=["npm", "run", "llm:proxy"])
+    assert proxy.command[:4] == ["npm", "run", "llm:proxy", "--"]
+    assert proxy.pid == 12345
     assert calls[0][1]["cwd"] == tmp_path
 
 
