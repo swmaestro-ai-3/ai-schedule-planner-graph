@@ -26,3 +26,7 @@ npm test
 ```bash
 streamlit run app.py
 ```
+
+## Demo
+
+See `docs/demo-scenarios.md` for the student and junior developer demo inputs.
