@@ -103,6 +103,8 @@ def test_rejected_input_creates_constraints_and_increments_count():
     assert result["replan_count"] == 1
     assert result["replan_constraints"].buffer_ratio_delta == 0.1
     assert result["approval_status"] == "pending"
+    assert result["parsed_input"].buffer_ratio == 0.1
+    assert result["draft_plan"].target_buffer_minutes > 0
 
 
 def test_replan_limit_stops_automatic_replanning():

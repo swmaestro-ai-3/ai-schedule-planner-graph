@@ -3,6 +3,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 
 from planner.nodes import (
+    apply_replan_constraints_node,
     approval_node,
     clarification_node,
     classify_blocks_node,
@@ -41,6 +42,7 @@ def route_after_approval(state: PlannerState) -> str:
 def build_planner_graph(checkpointer=None):
     graph = StateGraph(PlannerState)
     graph.add_node("parse_input_node", parse_input_node)
+    graph.add_node("apply_replan_constraints_node", apply_replan_constraints_node)
     graph.add_node("validate_input_node", validate_input_node)
     graph.add_node("clarification_node", clarification_node)
     graph.add_node("normalize_time_node", normalize_time_node)
@@ -55,7 +57,8 @@ def build_planner_graph(checkpointer=None):
     graph.add_node("finalize_node", finalize_node)
 
     graph.add_edge(START, "parse_input_node")
-    graph.add_edge("parse_input_node", "validate_input_node")
+    graph.add_edge("parse_input_node", "apply_replan_constraints_node")
+    graph.add_edge("apply_replan_constraints_node", "validate_input_node")
     graph.add_conditional_edges(
         "validate_input_node",
         route_after_validation,

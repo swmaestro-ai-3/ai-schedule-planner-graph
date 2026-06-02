@@ -93,7 +93,36 @@ def structured_input_section_titles() -> list[str]:
 
 
 def structured_input_action_labels() -> list[str]:
-    return ["현재 입력으로 일정안 생성", "일정안 생성"]
+    return ["일정안 생성"]
+
+
+def structured_input_editor_column_order() -> dict[str, tuple[str, ...]]:
+    return {
+        "fixed_events": ("title", "start_time", "end_time", "category"),
+        "tasks": ("title", "estimated_minutes", "priority", "focus_type", "splittable"),
+    }
+
+
+def structured_input_summary_cards(
+    *,
+    plan_date: date,
+    day_start: time,
+    day_end: time,
+    buffer_ratio: float,
+    fixed_event_rows: list[dict[str, Any]],
+    task_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    fixed_event_count = sum(1 for row in fixed_event_rows if row.get("title"))
+    task_count = sum(1 for row in task_rows if row.get("title"))
+    return [
+        {"label": "날짜", "value": plan_date.strftime("%Y/%m/%d")},
+        {
+            "label": "운영 시간",
+            "value": f"{day_start.strftime('%H:%M')}-{day_end.strftime('%H:%M')}",
+        },
+        {"label": "여유", "value": f"{buffer_ratio * 100:.0f}%"},
+        {"label": "입력", "value": f"고정 {fixed_event_count}개 / 작업 {task_count}개"},
+    ]
 
 
 def fixed_event_editor_column_labels() -> dict[str, str]:
@@ -110,10 +139,10 @@ def task_editor_column_labels() -> dict[str, str]:
     return {
         "id": "ID",
         "title": "작업명",
-        "estimated_minutes": "예상분",
-        "priority": "우선순위",
-        "splittable": "분할",
-        "focus_type": "작업 유형",
+        "estimated_minutes": "소요(분)",
+        "priority": "중요도",
+        "splittable": "분할 가능",
+        "focus_type": "집중도",
     }
 
 
@@ -152,9 +181,9 @@ def task_editor_column_config() -> dict[str, Any]:
             options=["deep", "light", "any"],
             width="small",
             format_func=lambda value: {
-                "deep": "Deep",
-                "light": "Light",
-                "any": "Any",
+                "deep": "깊은 집중",
+                "light": "가벼운 작업",
+                "any": "상관없음",
             }.get(value, value),
         ),
     }
@@ -877,11 +906,135 @@ def render_auth_sidebar() -> None:
     render_openai_oauth_controls()
 
 
+def render_structured_input_styles() -> None:
+    st.markdown(
+        """
+<style>
+.structured-input-intro {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 6px 0 18px;
+  background: #ffffff;
+}
+.structured-input-intro-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+.structured-input-intro-copy {
+  color: #6b7280;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.structured-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 12px 0 18px;
+  background: #ffffff;
+}
+.structured-summary-item {
+  padding: 10px 12px;
+  border-right: 1px solid #e5e7eb;
+}
+.structured-summary-item:last-child {
+  border-right: 0;
+}
+.structured-summary-label {
+  color: #6b7280;
+  font-size: 0.76rem;
+  margin-bottom: 2px;
+}
+.structured-summary-value {
+  color: #111827;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+.structured-section-header {
+  margin: 18px 0 8px;
+}
+.structured-section-title {
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.structured-section-copy {
+  color: #6b7280;
+  font-size: 0.86rem;
+  margin-top: 2px;
+}
+.structured-submit-note {
+  color: #6b7280;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  padding-top: 4px;
+}
+@media (max-width: 760px) {
+  .structured-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .structured-summary-item:nth-child(2) {
+    border-right: 0;
+  }
+}
+</style>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def render_structured_summary_cards(cards: list[dict[str, str]]) -> None:
+    items = "".join(
+        f"""
+<div class="structured-summary-item">
+  <div class="structured-summary-label">{escape(card["label"])}</div>
+  <div class="structured-summary-value">{escape(card["value"])}</div>
+</div>
+"""
+        for card in cards
+    )
+    st.markdown(f'<div class="structured-summary">{items}</div>', unsafe_allow_html=True)
+
+
+def render_structured_section_header(title: str, copy: str) -> None:
+    st.markdown(
+        f"""
+<div class="structured-section-header">
+  <div class="structured-section-title">{escape(title)}</div>
+  <div class="structured-section-copy">{escape(copy)}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def render_structured_tab() -> None:
     settings_title, fixed_title, task_title = structured_input_section_titles()
-    top_action_label, bottom_action_label = structured_input_action_labels()
+    primary_action_label = structured_input_action_labels()[0]
+    column_order = structured_input_editor_column_order()
 
-    st.markdown(f"#### {settings_title}")
+    render_structured_input_styles()
+    st.markdown(
+        """
+<div class="structured-input-intro">
+  <div class="structured-input-intro-title">구조화 입력</div>
+  <div class="structured-input-intro-copy">
+    하루의 기준 시간, 이미 정해진 일정, 배치할 작업만 직접 수정합니다.
+    AI는 고정 일정을 건드리지 않고 남는 시간에 작업을 배치합니다.
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    render_structured_section_header(
+        settings_title,
+        "일정을 배치할 날짜와 하루의 시작/종료, 확보할 여유 시간을 정합니다.",
+    )
     settings_cols = st.columns([1.15, 1.0, 1.0, 1.35])
     plan_date = settings_cols[0].date_input("날짜", value=date(2026, 6, 3))
     st.session_state["selected_plan_date"] = plan_date
@@ -894,8 +1047,27 @@ def render_structured_tab() -> None:
     if "task_rows" not in st.session_state:
         st.session_state["task_rows"] = default_task_rows()
 
-    action_cols = st.columns([0.36, 0.64])
-    if action_cols[0].button(top_action_label, type="primary", key="structured_generate_top"):
+    render_structured_summary_cards(
+        structured_input_summary_cards(
+            plan_date=plan_date,
+            day_start=day_start,
+            day_end=day_end,
+            buffer_ratio=buffer_ratio,
+            fixed_event_rows=list(st.session_state["fixed_event_rows"]),
+            task_rows=list(st.session_state["task_rows"]),
+        )
+    )
+    submit_cols = st.columns([0.62, 0.38])
+    submit_cols[0].markdown(
+        '<div class="structured-submit-note">입력값을 검토한 뒤 AI 배치 제안을 생성합니다.</div>',
+        unsafe_allow_html=True,
+    )
+    if submit_cols[1].button(
+        primary_action_label,
+        type="primary",
+        key="structured_generate",
+        use_container_width=True,
+    ):
         submit_structured_plan(
             plan_date=plan_date,
             day_start=day_start,
@@ -905,12 +1077,14 @@ def render_structured_tab() -> None:
             task_rows=list(st.session_state["task_rows"]),
         )
 
-    st.markdown(f"#### {fixed_title}")
-    st.caption("수업, 회의, 약속처럼 이미 시간이 정해진 일정을 입력합니다.")
+    render_structured_section_header(
+        fixed_title,
+        "수업, 회의, 약속처럼 시작과 종료가 정해진 일정을 입력합니다.",
+    )
     fixed_event_rows = st.data_editor(
         st.session_state["fixed_event_rows"],
         column_config=fixed_event_editor_column_config(),
-        column_order=("id", "title", "start_time", "end_time", "category"),
+        column_order=column_order["fixed_events"],
         hide_index=True,
         num_rows="dynamic",
         width="stretch",
@@ -918,36 +1092,20 @@ def render_structured_tab() -> None:
     )
     st.session_state["fixed_event_rows"] = list(fixed_event_rows)
 
-    st.markdown(f"#### {task_title}")
-    st.caption("AI가 free block에 배치할 작업을 입력합니다.")
+    render_structured_section_header(
+        task_title,
+        "AI가 빈 시간에 배치해야 하는 작업과 소요 시간, 중요도, 집중도를 입력합니다.",
+    )
     task_rows = st.data_editor(
         st.session_state["task_rows"],
         column_config=task_editor_column_config(),
-        column_order=(
-            "id",
-            "title",
-            "estimated_minutes",
-            "priority",
-            "splittable",
-            "focus_type",
-        ),
+        column_order=column_order["tasks"],
         hide_index=True,
         num_rows="dynamic",
         width="stretch",
         key="tasks",
     )
     st.session_state["task_rows"] = list(task_rows)
-
-    st.divider()
-    if st.button(bottom_action_label, type="primary", key="structured_generate_bottom"):
-        submit_structured_plan(
-            plan_date=plan_date,
-            day_start=day_start,
-            day_end=day_end,
-            buffer_ratio=buffer_ratio,
-            fixed_event_rows=list(fixed_event_rows),
-            task_rows=list(task_rows),
-        )
 
 
 def render_natural_language_tab() -> None:

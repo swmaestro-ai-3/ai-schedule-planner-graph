@@ -40,6 +40,65 @@ def parse_input_node(state: PlannerState) -> PlannerState:
         }
 
 
+def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
+    plan_input = state.get("parsed_input")
+    if plan_input is None:
+        return {}
+    if state.get("approval_status") != "rejected":
+        return {}
+    if not state.get("rejection_reason"):
+        return {}
+    if state.get("replan_count", 0) >= 3:
+        return {}
+
+    constraints = interpret_rejection_reason(state.get("rejection_reason", ""), state)
+    updated_input = plan_input
+
+    if constraints.buffer_ratio_delta:
+        updated_input = updated_input.model_copy(
+            update={
+                "buffer_ratio": min(
+                    1.0,
+                    max(0.0, updated_input.buffer_ratio + constraints.buffer_ratio_delta),
+                )
+            }
+        )
+
+    if constraints.fixed_event_buffer_after:
+        updated_input = updated_input.model_copy(
+            update={
+                "fixed_events": [
+                    event.model_copy(
+                        update={
+                            "buffer_after_minutes": max(
+                                event.buffer_after_minutes,
+                                constraints.fixed_event_buffer_after,
+                            )
+                        }
+                    )
+                    for event in updated_input.fixed_events
+                ]
+            }
+        )
+
+    if constraints.excluded_task_ids:
+        excluded = set(constraints.excluded_task_ids)
+        updated_input = updated_input.model_copy(
+            update={
+                "tasks": [
+                    task for task in updated_input.tasks if task.id not in excluded
+                ]
+            }
+        )
+
+    return {
+        "parsed_input": updated_input,
+        "replan_constraints": constraints,
+        "replan_count": state.get("replan_count", 0) + 1,
+        "approval_status": "pending",
+    }
+
+
 def validate_input_node(state: PlannerState) -> PlannerState:
     plan_input = state.get("parsed_input")
     if plan_input is None:

@@ -14,7 +14,9 @@ from app import (
     schedule_items_to_calendar_blocks,
     schedule_items_to_rows,
     should_show_openai_oauth_button,
+    structured_input_editor_column_order,
     structured_input_action_labels,
+    structured_input_summary_cards,
     structured_input_section_titles,
     task_editor_column_labels,
     validation_panel_rows,
@@ -73,11 +75,8 @@ def test_structured_input_sections_are_user_facing():
     ]
 
 
-def test_structured_input_has_top_and_bottom_actions():
-    assert structured_input_action_labels() == [
-        "현재 입력으로 일정안 생성",
-        "일정안 생성",
-    ]
+def test_structured_input_has_one_primary_action():
+    assert structured_input_action_labels() == ["일정안 생성"]
 
 
 def test_structured_editor_columns_use_user_facing_labels():
@@ -91,11 +90,36 @@ def test_structured_editor_columns_use_user_facing_labels():
     assert task_editor_column_labels() == {
         "id": "ID",
         "title": "작업명",
-        "estimated_minutes": "예상분",
-        "priority": "우선순위",
-        "splittable": "분할",
-        "focus_type": "작업 유형",
+        "estimated_minutes": "소요(분)",
+        "priority": "중요도",
+        "splittable": "분할 가능",
+        "focus_type": "집중도",
     }
+
+
+def test_structured_input_hides_technical_id_columns():
+    assert structured_input_editor_column_order() == {
+        "fixed_events": ("title", "start_time", "end_time", "category"),
+        "tasks": ("title", "estimated_minutes", "priority", "focus_type", "splittable"),
+    }
+
+
+def test_structured_input_summary_cards_are_scan_friendly():
+    cards = structured_input_summary_cards(
+        plan_date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+        buffer_ratio=0.1,
+        fixed_event_rows=[{"title": "전공 수업"}],
+        task_rows=[{"title": "알고리즘 과제"}, {"title": "영어 단어 암기"}],
+    )
+
+    assert cards == [
+        {"label": "날짜", "value": "2026/06/03"},
+        {"label": "운영 시간", "value": "09:00-23:00"},
+        {"label": "여유", "value": "10%"},
+        {"label": "입력", "value": "고정 1개 / 작업 2개"},
+    ]
 
 
 def test_schedule_items_to_rows_formats_offsets():

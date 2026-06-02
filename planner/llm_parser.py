@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Callable
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from planner.models import DayPlanInput, ReplanConstraints, ValidationIssue
+from planner.prompts import INTERPRET_REJECTION_PROMPT, PARSE_DAY_PLAN_PROMPT
 
 
 class LLMParserError(RuntimeError):
@@ -18,6 +20,67 @@ class LLMParserError(RuntimeError):
 SidecarCallable = Callable[[dict[str, Any]], dict[str, Any]]
 
 
+def build_day_plan_parse_payload(
+    raw_text: str,
+    *,
+    reference_date: date | None = None,
+    timezone: str = "Asia/Seoul",
+) -> dict[str, Any]:
+    return {
+        "task": "parse_day_plan",
+        "prompt": PARSE_DAY_PLAN_PROMPT,
+        "input": raw_text,
+        "reference_date": (reference_date or date.today()).isoformat(),
+        "timezone": timezone,
+        "output_schema": {
+            "type": "object",
+            "required": ["day_plan"],
+            "properties": {
+                "day_plan": DayPlanInput.model_json_schema(),
+            },
+        },
+    }
+
+
+def build_rejection_interpretation_payload(
+    reason: str,
+    current_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "task": "interpret_rejection",
+        "prompt": INTERPRET_REJECTION_PROMPT,
+        "input": reason,
+        "current_state": _summarize_state_for_rejection(current_state or {}),
+        "output_schema": {
+            "type": "object",
+            "required": ["replan_constraints"],
+            "properties": {
+                "replan_constraints": ReplanConstraints.model_json_schema(),
+            },
+        },
+    }
+
+
+def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
+    draft_plan = state.get("draft_plan")
+    plan_input = state.get("parsed_input")
+    return {
+        "replan_count": state.get("replan_count", 0),
+        "date": plan_input.date.isoformat() if plan_input else None,
+        "task_ids": [task.id for task in plan_input.tasks] if plan_input else [],
+        "schedule_items": [
+            {
+                "type": item.type.value,
+                "title": item.title,
+                "source_id": item.source_id,
+                "start_offset": item.start_offset,
+                "end_offset": item.end_offset,
+            }
+            for item in (draft_plan.schedule_items if draft_plan else [])
+        ],
+    }
+
+
 def call_llm_sidecar(
     payload: dict[str, Any],
     command: list[str] | None = None,
@@ -25,15 +88,19 @@ def call_llm_sidecar(
 ) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[1]
     sidecar_command = command or ["node", "llm_sidecar/openai_oauth_client.mjs"]
-    completed = subprocess.run(
-        sidecar_command,
-        cwd=root,
-        input=json.dumps(payload, ensure_ascii=False),
-        text=True,
-        capture_output=True,
-        timeout=timeout_seconds,
-        check=True,
-    )
+    try:
+        completed = subprocess.run(
+            sidecar_command,
+            cwd=root,
+            input=json.dumps(payload, ensure_ascii=False),
+            text=True,
+            capture_output=True,
+            timeout=timeout_seconds,
+            check=True,
+        )
+    except Exception as exc:
+        message = getattr(exc, "stderr", None) or str(exc)
+        raise LLMParserError(f"Sidecar call failed: {message}") from exc
     try:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
@@ -44,15 +111,18 @@ def parse_natural_language_input(
     raw_text: str,
     sidecar: SidecarCallable = call_llm_sidecar,
     max_retries: int = 2,
+    reference_date: date | None = None,
+    timezone: str = "Asia/Seoul",
 ) -> DayPlanInput:
     last_error: Exception | None = None
     for _ in range(max_retries):
         try:
             response = sidecar(
-                {
-                    "task": "parse_day_plan",
-                    "input": raw_text,
-                }
+                build_day_plan_parse_payload(
+                    raw_text,
+                    reference_date=reference_date,
+                    timezone=timezone,
+                )
             )
             return DayPlanInput.model_validate(response.get("day_plan", response))
         except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
@@ -76,9 +146,8 @@ def build_clarification_questions(errors: list[ValidationIssue]) -> list[str]:
     return questions
 
 
-def interpret_rejection_reason(
+def _interpret_rejection_reason_with_rules(
     reason: str,
-    current_state: dict[str, Any] | None = None,
 ) -> ReplanConstraints:
     constraints = ReplanConstraints(notes=[reason])
     if "빡빡" in reason or "여유" in reason:
@@ -87,4 +156,29 @@ def interpret_rejection_reason(
         constraints.fixed_event_buffer_after = 15
     if "오늘 안 해도" in reason:
         constraints.notes.append("사용자가 일부 작업 제외를 요청했습니다.")
+    return constraints
+
+
+def interpret_rejection_reason(
+    reason: str,
+    current_state: dict[str, Any] | None = None,
+    sidecar: SidecarCallable | None = None,
+    max_retries: int = 1,
+) -> ReplanConstraints:
+    last_error: Exception | None = None
+    if sidecar is not None:
+        for _ in range(max_retries):
+            try:
+                response = sidecar(
+                    build_rejection_interpretation_payload(reason, current_state)
+                )
+                return ReplanConstraints.model_validate(
+                    response.get("replan_constraints", response)
+                )
+            except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
+                last_error = exc
+
+    constraints = _interpret_rejection_reason_with_rules(reason)
+    if last_error is not None:
+        constraints.notes.append(f"LLM 피드백 해석 fallback: {last_error}")
     return constraints
