@@ -27,6 +27,35 @@ npm test
 streamlit run app.py
 ```
 
+## Integrations
+
+### Google Calendar
+
+Create a Google OAuth web client and set these values in `.env`:
+
+```bash
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:8501
+GOOGLE_TOKEN_FILE=.google-calendar-token.json
+```
+
+The app uses `https://www.googleapis.com/auth/calendar.events` so it can import
+timed events and export approved planner tasks. The generated token file is
+ignored by git.
+
+### OpenAI OAuth
+
+The sidebar exposes three local controls:
+
+- `OpenAI 로그인 시작` runs `npx @openai/codex login`.
+- `OpenAI proxy 시작` runs `npm run llm:proxy`.
+- `OpenAI 연결 확인` checks the local proxy at `OPENAI_OAUTH_BASE_URL`.
+
+Natural-language parsing uses the npm `openai-oauth` proxy through the Node
+sidecar. Treat local `auth.json` and `.openai-oauth/` contents as
+password-equivalent credential material.
+
 ## Demo
 
 See `docs/demo-scenarios.md` for the student and junior developer demo inputs.
