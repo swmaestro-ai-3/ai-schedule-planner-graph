@@ -107,6 +107,37 @@ def test_rejected_input_creates_constraints_and_increments_count():
     assert result["draft_plan"].target_buffer_minutes > 0
 
 
+def test_rejected_input_can_use_ai_replan_interpreter(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "회의 직후에는 쉬고 전체적으로 더 여유 있게 해줘"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0.2,
+                "excluded_task_ids": [],
+                "preferred_windows": {},
+                "fixed_event_buffer_after": 15,
+                "notes": ["AI가 사용자 피드백을 재계획 제약으로 해석했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    result = invoke_graph(
+        {
+            "parsed_input": make_valid_input(),
+            "approval_status": "rejected",
+            "rejection_reason": "회의 직후에는 쉬고 전체적으로 더 여유 있게 해줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    assert result["replan_constraints"].buffer_ratio_delta == 0.2
+    assert result["parsed_input"].buffer_ratio == 0.2
+    assert result["parsed_input"].fixed_events[0].buffer_after_minutes == 15
+    assert "AI가 사용자 피드백" in result["replan_constraints"].notes[0]
+
+
 def test_replan_limit_stops_automatic_replanning():
     result = invoke_graph(
         {

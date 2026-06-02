@@ -10,6 +10,14 @@ from urllib import request
 
 
 DEFAULT_OPENAI_OAUTH_BASE_URL = "http://127.0.0.1:10531/v1"
+DEFAULT_OPENAI_OAUTH_MODELS = [
+    "gpt-5.4",
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+    "gpt-5.1",
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-max",
+]
 
 
 @dataclass(frozen=True)
@@ -72,8 +80,10 @@ def build_codex_login_command() -> list[str]:
     return ["npx", "@openai/codex", "login"]
 
 
-def build_proxy_command() -> list[str]:
-    return ["npm", "run", "llm:proxy"]
+def build_proxy_command(env: dict[str, str] | None = None) -> list[str]:
+    values = env if env is not None else os.environ
+    models = values.get("OPENAI_OAUTH_MODELS") or ",".join(DEFAULT_OPENAI_OAUTH_MODELS)
+    return ["npm", "run", "llm:proxy", "--", "--models", models]
 
 
 def _start_process(

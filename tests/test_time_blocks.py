@@ -41,6 +41,28 @@ def test_fixed_events_create_free_blocks_between_events():
     ]
 
 
+def test_fixed_event_buffers_reduce_free_blocks():
+    blocks = compute_free_blocks(
+        0,
+        360,
+        [
+            NormalizedFixedEvent(
+                id="class-1",
+                title="전공 수업",
+                start_offset=60,
+                end_offset=180,
+                buffer_before_minutes=10,
+                buffer_after_minutes=15,
+            ),
+        ],
+    )
+
+    assert [(block.start_offset, block.end_offset) for block in blocks] == [
+        (0, 50),
+        (195, 360),
+    ]
+
+
 def test_classifies_blocks_by_duration():
     assert classify_free_block(FreeBlock(id="b1", start_offset=0, end_offset=20)) == BlockType.BUFFER
     assert classify_free_block(FreeBlock(id="b2", start_offset=0, end_offset=60)) == BlockType.LIGHT_WORK

@@ -3,6 +3,7 @@ from __future__ import annotations
 from planner.explanations import build_rule_based_explanation
 from planner.llm_parser import (
     build_clarification_questions,
+    call_llm_sidecar,
     interpret_rejection_reason,
     parse_natural_language_input,
 )
@@ -51,7 +52,11 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
     if state.get("replan_count", 0) >= 3:
         return {}
 
-    constraints = interpret_rejection_reason(state.get("rejection_reason", ""), state)
+    constraints = interpret_rejection_reason(
+        state.get("rejection_reason", ""),
+        state,
+        sidecar=call_llm_sidecar if state.get("use_llm_replan") else None,
+    )
     updated_input = plan_input
 
     if constraints.buffer_ratio_delta:
