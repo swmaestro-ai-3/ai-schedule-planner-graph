@@ -8,11 +8,16 @@ from app import (
     fixed_events_to_editor_rows,
     integration_button_labels,
     merge_fixed_event_rows,
+    mvp_sidebar_integration_labels,
+    schedule_change_summary,
+    schedule_items_to_calendar_blocks,
     schedule_items_to_rows,
     should_show_openai_oauth_button,
+    validation_panel_rows,
     warning_summary_rows,
 )
 from planner.models import (
+    BufferSummary,
     FinalPlanOutput,
     FixedEvent,
     ScheduleItem,
@@ -223,3 +228,117 @@ def test_openai_oauth_button_hides_when_proxy_is_connected():
         )
         is True
     )
+
+
+def test_schedule_items_to_calendar_blocks_maps_position_and_size():
+    blocks = schedule_items_to_calendar_blocks(
+        [
+            ScheduleItem(
+                type=ScheduleItemType.FIXED_EVENT,
+                title="전공 수업",
+                start_offset=60,
+                end_offset=180,
+            ),
+            ScheduleItem(
+                type=ScheduleItemType.TASK,
+                title="알고리즘 과제",
+                start_offset=180,
+                end_offset=300,
+                reason="오늘 마감입니다.",
+            ),
+        ],
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+    )
+
+    assert blocks[0] == {
+        "top": 60,
+        "height": 120,
+        "time": "10:00~12:00",
+        "type": "fixed_event",
+        "title": "전공 수업",
+        "reason": "",
+    }
+    assert blocks[1]["top"] == 180
+    assert blocks[1]["height"] == 120
+    assert blocks[1]["type"] == "task"
+
+
+def test_validation_panel_rows_summarizes_user_review_inputs():
+    task = Task(
+        id="low",
+        title="낮은 우선순위 작업",
+        estimated_minutes=60,
+        priority=1,
+        splittable=False,
+    )
+    rows = validation_panel_rows(
+        {
+            "warnings": [
+                ValidationIssue(
+                    code="BUFFER_SHORTAGE",
+                    message="Buffer가 부족합니다.",
+                )
+            ],
+            "unassigned_tasks": [
+                UnassignedTask(
+                    task=task,
+                    reason_code=UnassignedReasonCode.NO_AVAILABLE_BLOCK,
+                    reason="들어갈 block이 없습니다.",
+                )
+            ],
+            "validation_result": type(
+                "ValidationResultStub",
+                (),
+                {"buffer_summary": BufferSummary(target_minutes=42, secured_minutes=25)},
+            )(),
+        }
+    )
+
+    assert rows == [
+        {"check": "buffer", "status": "부족", "detail": "목표 42분 / 확보 25분"},
+        {"check": "warning", "status": "확인 필요", "detail": "Buffer가 부족합니다."},
+        {
+            "check": "unassigned",
+            "status": "미배치",
+            "detail": "낮은 우선순위 작업: 들어갈 block이 없습니다.",
+        },
+    ]
+
+
+def test_schedule_change_summary_reports_moved_tasks():
+    previous = [
+        ScheduleItem(
+            type=ScheduleItemType.TASK,
+            title="알고리즘 과제",
+            source_id="task-1",
+            start_offset=60,
+            end_offset=180,
+        )
+    ]
+    current = [
+        ScheduleItem(
+            type=ScheduleItemType.TASK,
+            title="알고리즘 과제",
+            source_id="task-1",
+            start_offset=180,
+            end_offset=300,
+        )
+    ]
+
+    assert schedule_change_summary(previous, current, day_start=time(9, 0)) == [
+        {
+            "task": "알고리즘 과제",
+            "before": "10:00~12:00",
+            "after": "12:00~14:00",
+        }
+    ]
+
+
+def test_mvp_sidebar_excludes_google_calendar_label():
+    assert mvp_sidebar_integration_labels(
+        openai_status=OpenAIOAuthStatus(connected=False, message="not connected")
+    ) == ["OpenAI OAuth 연동"]
+    assert mvp_sidebar_integration_labels(
+        openai_status=OpenAIOAuthStatus(connected=True, message="connected")
+    ) == []

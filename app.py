@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from html import escape
 from datetime import date, time, timedelta
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,13 @@ def integration_button_labels() -> list[str]:
 
 def should_show_openai_oauth_button(status: OpenAIOAuthStatus) -> bool:
     return not status.connected
+
+
+def mvp_sidebar_integration_labels(*, openai_status: OpenAIOAuthStatus) -> list[str]:
+    labels: list[str] = []
+    if should_show_openai_oauth_button(openai_status):
+        labels.append(integration_button_labels()[1])
+    return labels
 
 
 def build_structured_input(
@@ -219,6 +227,116 @@ def schedule_items_to_rows(
     ]
 
 
+def schedule_items_to_calendar_blocks(
+    items: list[ScheduleItem],
+    *,
+    day_start: time,
+    day_end: time,
+) -> list[dict[str, Any]]:
+    day_length = int(
+        (
+            timedelta(hours=day_end.hour, minutes=day_end.minute)
+            - timedelta(hours=day_start.hour, minutes=day_start.minute)
+        ).total_seconds()
+        // 60
+    )
+    blocks: list[dict[str, Any]] = []
+    for item in items:
+        start = max(0, min(item.start_offset, day_length))
+        end = max(start, min(item.end_offset, day_length))
+        blocks.append(
+            {
+                "top": start,
+                "height": max(8, end - start),
+                "time": (
+                    f"{_offset_to_time(day_start, item.start_offset)}"
+                    f"~{_offset_to_time(day_start, item.end_offset)}"
+                ),
+                "type": item.type.value,
+                "title": item.title,
+                "reason": item.reason,
+            }
+        )
+    return blocks
+
+
+def validation_panel_rows(state: dict[str, Any]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    validation_result = state.get("validation_result")
+    buffer_summary = getattr(validation_result, "buffer_summary", None)
+    if buffer_summary and buffer_summary.target_minutes:
+        status = "부족" if buffer_summary.shortage_minutes else "충분"
+        rows.append(
+            {
+                "check": "buffer",
+                "status": status,
+                "detail": (
+                    f"목표 {buffer_summary.target_minutes}분 / "
+                    f"확보 {buffer_summary.secured_minutes}분"
+                ),
+            }
+        )
+
+    rows.extend(
+        {
+            "check": "warning",
+            "status": "확인 필요",
+            "detail": warning.message,
+        }
+        for warning in state.get("warnings", [])
+    )
+    rows.extend(
+        {
+            "check": "unassigned",
+            "status": "미배치",
+            "detail": f"{item.task.title}: {item.reason}",
+        }
+        for item in state.get("unassigned_tasks", [])
+    )
+    if not rows:
+        rows.append({"check": "overall", "status": "양호", "detail": "검증 경고 없음"})
+    return rows
+
+
+def schedule_change_summary(
+    previous_items: list[ScheduleItem],
+    current_items: list[ScheduleItem],
+    *,
+    day_start: time,
+) -> list[dict[str, str]]:
+    previous_by_key = {
+        item.source_id or item.title: item
+        for item in previous_items
+        if item.type == ScheduleItemType.TASK
+    }
+    rows: list[dict[str, str]] = []
+    for item in current_items:
+        if item.type != ScheduleItemType.TASK:
+            continue
+        previous = previous_by_key.get(item.source_id or item.title)
+        if previous is None:
+            continue
+        if (
+            previous.start_offset == item.start_offset
+            and previous.end_offset == item.end_offset
+        ):
+            continue
+        rows.append(
+            {
+                "task": item.title,
+                "before": (
+                    f"{_offset_to_time(day_start, previous.start_offset)}"
+                    f"~{_offset_to_time(day_start, previous.end_offset)}"
+                ),
+                "after": (
+                    f"{_offset_to_time(day_start, item.start_offset)}"
+                    f"~{_offset_to_time(day_start, item.end_offset)}"
+                ),
+            }
+        )
+    return rows
+
+
 def warning_summary_rows(
     *,
     warnings: list[ValidationIssue],
@@ -272,6 +390,228 @@ def render_result(state: dict[str, Any], plan_input: DayPlanInput) -> None:
 
     st.subheader("판단 근거")
     st.write(final_plan.explanation if final_plan else state.get("explanation", ""))
+
+
+def _calendar_hours(day_start: time, day_end: time) -> list[tuple[int, str]]:
+    start_minutes = day_start.hour * 60 + day_start.minute
+    end_minutes = day_end.hour * 60 + day_end.minute
+    return [
+        (minute - start_minutes, f"{minute // 60:02d}:00")
+        for minute in range(start_minutes, end_minutes + 1, 60)
+    ]
+
+
+def _calendar_block_class(item_type: str) -> str:
+    return {
+        "fixed_event": "calendar-block-fixed",
+        "task": "calendar-block-task",
+        "buffer": "calendar-block-buffer",
+        "free": "calendar-block-free",
+    }.get(item_type, "calendar-block-free")
+
+
+def render_calendar_view(items: list[ScheduleItem], plan_input: DayPlanInput) -> None:
+    blocks = schedule_items_to_calendar_blocks(
+        items,
+        day_start=plan_input.day_start,
+        day_end=plan_input.day_end,
+    )
+    day_length = max(
+        60,
+        int(
+            (
+                timedelta(hours=plan_input.day_end.hour, minutes=plan_input.day_end.minute)
+                - timedelta(hours=plan_input.day_start.hour, minutes=plan_input.day_start.minute)
+            ).total_seconds()
+            // 60
+        ),
+    )
+    scale = 1.2
+    timeline_height = int(day_length * scale)
+    hour_rows = "\n".join(
+        f'<div class="calendar-hour" style="top:{offset * scale:.1f}px">{label}</div>'
+        for offset, label in _calendar_hours(plan_input.day_start, plan_input.day_end)
+    )
+    block_html = "\n".join(
+        (
+            f'<div class="calendar-block {_calendar_block_class(block["type"])}" '
+            f'style="top:{block["top"] * scale:.1f}px;'
+            f'height:{max(22, block["height"] * scale):.1f}px">'
+            f'<div class="calendar-block-time">{escape(block["time"])}</div>'
+            f'<div class="calendar-block-title">{escape(block["title"])}</div>'
+            f'<div class="calendar-block-reason">{escape(block["reason"])}</div>'
+            "</div>"
+        )
+        for block in blocks
+    )
+    st.markdown(
+        f"""
+<style>
+.calendar-shell {{
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid #d7dde8;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 14px;
+  margin: 8px 0 18px;
+}}
+.calendar-axis {{
+  position: relative;
+  height: {timeline_height}px;
+  color: #64748b;
+  font-size: 12px;
+}}
+.calendar-hour {{
+  position: absolute;
+  right: 0;
+  transform: translateY(-8px);
+}}
+.calendar-lane {{
+  position: relative;
+  height: {timeline_height}px;
+  border-left: 1px solid #cbd5e1;
+  background: repeating-linear-gradient(
+    to bottom,
+    #ffffff 0,
+    #ffffff 71px,
+    #eef2f7 72px
+  );
+}}
+.calendar-block {{
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  padding: 6px 8px;
+  box-sizing: border-box;
+}}
+.calendar-block-fixed {{ background: #dbeafe; border-color: #93c5fd; }}
+.calendar-block-task {{ background: #dcfce7; border-color: #86efac; }}
+.calendar-block-buffer {{ background: #fef3c7; border-color: #fcd34d; }}
+.calendar-block-free {{ background: #f1f5f9; border-color: #cbd5e1; }}
+.calendar-block-time {{
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.2;
+}}
+.calendar-block-title {{
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+  margin-top: 1px;
+}}
+.calendar-block-reason {{
+  color: #475569;
+  font-size: 11px;
+  line-height: 1.2;
+  margin-top: 2px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}}
+</style>
+<div class="calendar-shell">
+  <div class="calendar-axis">{hour_rows}</div>
+  <div class="calendar-lane">{block_html}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+def _current_output_items(state: dict[str, Any]) -> list[ScheduleItem]:
+    final_plan = state.get("final_plan")
+    if final_plan:
+        return final_plan.schedule_items
+    draft = state.get("draft_plan")
+    return draft.schedule_items if draft else []
+
+
+def render_ai_proposal_section(state: dict[str, Any], plan_input: DayPlanInput) -> None:
+    st.markdown("### 2. AI 배치 제안")
+    output_items = _current_output_items(state)
+    render_calendar_view(output_items, plan_input)
+    st.dataframe(
+        schedule_items_to_rows(output_items, day_start=plan_input.day_start),
+        width="stretch",
+        hide_index=True,
+    )
+    st.markdown("#### 판단 근거")
+    final_plan = state.get("final_plan")
+    st.write(final_plan.explanation if final_plan else state.get("explanation", ""))
+
+
+def render_user_feedback_section(state: dict[str, Any], plan_input: DayPlanInput) -> None:
+    if state.get("final_plan"):
+        return
+    st.markdown("### 3. 사용자 검증 및 피드백")
+    st.dataframe(
+        validation_panel_rows(state),
+        width="stretch",
+        hide_index=True,
+    )
+    approve_col, feedback_col = st.columns(2)
+    if approve_col.button("승인"):
+        st.session_state["planner_state"] = run_planner(
+            plan_input,
+            approval_status="approved",
+        )
+        st.rerun()
+
+    rejection_reason = feedback_col.text_area("피드백", key="rejection_reason")
+    if feedback_col.button("피드백 반영해 재배치") and rejection_reason:
+        previous_items = _current_output_items(state)
+        graph = build_planner_graph()
+        next_state = graph.invoke(
+            {
+                "parsed_input": plan_input,
+                "approval_status": "rejected",
+                "rejection_reason": rejection_reason,
+                "replan_count": state.get("replan_count", 0),
+            }
+        )
+        st.session_state["previous_schedule_items"] = previous_items
+        st.session_state["last_feedback"] = rejection_reason
+        st.session_state["planner_state"] = next_state
+        st.rerun()
+
+
+def render_replan_section(state: dict[str, Any], plan_input: DayPlanInput) -> None:
+    if state.get("final_plan"):
+        st.markdown("### 4. AI 재배치 / 확정")
+        st.success("최종 일정으로 확정됨")
+        return
+    if not st.session_state.get("last_feedback"):
+        return
+    st.markdown("### 4. AI 재배치 / 확정")
+    st.caption(f"반영된 피드백: {st.session_state['last_feedback']}")
+    st.caption(f"재계획 횟수: {state.get('replan_count', 0)}")
+    change_rows = schedule_change_summary(
+        st.session_state.get("previous_schedule_items", []),
+        _current_output_items(state),
+        day_start=plan_input.day_start,
+    )
+    if change_rows:
+        st.dataframe(change_rows, width="stretch", hide_index=True)
+    else:
+        st.info("변경된 task 시간 없음")
+
+
+def render_planner_workspace(state: dict[str, Any], plan_input: DayPlanInput) -> None:
+    render_ai_proposal_section(state, plan_input)
+    render_user_feedback_section(state, plan_input)
+    render_replan_section(state, plan_input)
+
+
+def reset_replan_session_state() -> None:
+    st.session_state.pop("previous_schedule_items", None)
+    st.session_state.pop("last_feedback", None)
+    st.session_state.pop("rejection_reason", None)
 
 
 def _query_value(name: str) -> str | None:
@@ -412,10 +752,11 @@ def render_openai_oauth_controls() -> None:
     else:
         st.sidebar.caption("auth.json 감지됨" if auth_file else "auth.json 없음")
 
-    if not should_show_openai_oauth_button(status):
+    labels = mvp_sidebar_integration_labels(openai_status=status)
+    if not labels:
         return
 
-    openai_label = integration_button_labels()[1]
+    openai_label = labels[0]
 
     if st.sidebar.button(openai_label):
         if not auth_file:
@@ -439,7 +780,6 @@ def render_openai_oauth_controls() -> None:
 
 def render_auth_sidebar() -> None:
     st.sidebar.header("연동")
-    render_google_calendar_controls()
     render_openai_oauth_controls()
 
 
@@ -481,35 +821,9 @@ def render_structured_tab() -> None:
             fixed_event_rows=list(fixed_event_rows),
             task_rows=list(task_rows),
         )
+        reset_replan_session_state()
         st.session_state["plan_input"] = plan_input
         st.session_state["planner_state"] = run_planner(plan_input)
-
-    if st.session_state.get("planner_state") and st.session_state.get("plan_input"):
-        render_result(st.session_state["planner_state"], st.session_state["plan_input"])
-        approve_col, reject_col = st.columns(2)
-        if approve_col.button("승인"):
-            st.session_state["planner_state"] = run_planner(
-                st.session_state["plan_input"],
-                approval_status="approved",
-            )
-            render_result(
-                st.session_state["planner_state"],
-                st.session_state["plan_input"],
-            )
-        rejection_reason = reject_col.text_input("거절 사유")
-        if reject_col.button("재계획") and rejection_reason:
-            graph = build_planner_graph()
-            st.session_state["planner_state"] = graph.invoke(
-                {
-                    "parsed_input": st.session_state["plan_input"],
-                    "approval_status": "rejected",
-                    "rejection_reason": rejection_reason,
-                }
-            )
-            render_result(
-                st.session_state["planner_state"],
-                st.session_state["plan_input"],
-            )
 
 
 def render_natural_language_tab() -> None:
@@ -520,9 +834,9 @@ def render_natural_language_tab() -> None:
         except LLMParserError as exc:
             st.error(str(exc))
             return
+        reset_replan_session_state()
         st.session_state["plan_input"] = plan_input
         st.session_state["planner_state"] = run_planner(plan_input)
-        render_result(st.session_state["planner_state"], plan_input)
 
 
 def main() -> None:
@@ -533,11 +847,17 @@ def main() -> None:
     )
     st.title("AI Schedule Planner Graph")
     render_auth_sidebar()
+    st.markdown("### 1. 사용자 입력")
     natural_tab, structured_tab = st.tabs(["자연어 입력", "구조화 입력"])
     with natural_tab:
         render_natural_language_tab()
     with structured_tab:
         render_structured_tab()
+    if st.session_state.get("planner_state") and st.session_state.get("plan_input"):
+        render_planner_workspace(
+            st.session_state["planner_state"],
+            st.session_state["plan_input"],
+        )
 
 
 if __name__ == "__main__":
