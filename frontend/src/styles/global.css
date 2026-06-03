@@ -188,6 +188,17 @@ button:disabled {
   font-weight: 700;
 }
 
+.status-pill:not(.connected):hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: #eef2ff;
+}
+
+.status-pill:focus-visible {
+  outline: 3px solid rgba(79, 70, 229, 0.22);
+  outline-offset: 2px;
+}
+
 .status-pill span {
   width: 8px;
   height: 8px;
@@ -203,6 +214,11 @@ button:disabled {
 
 .status-pill.connected span {
   background: var(--success);
+}
+
+.status-pill.connected:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .ghost-icon-button {
@@ -860,6 +876,20 @@ select:focus {
   box-shadow: 0 18px 36px rgba(79, 70, 229, 0.28);
 }
 
+.agent-chat.is-busy .agent-fab {
+  box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.34), 0 18px 36px rgba(79, 70, 229, 0.28);
+  animation: agent-pulse 1.25s ease-in-out infinite;
+}
+
+.agent-spinner {
+  display: inline-grid;
+  place-items: center;
+}
+
+.agent-chat.is-busy .agent-spinner {
+  animation: agent-spin 1s linear infinite;
+}
+
 .agent-panel {
   width: min(380px, calc(100vw - 32px));
   overflow: hidden;
@@ -937,6 +967,40 @@ select:focus {
   color: white;
 }
 
+.agent-working {
+  display: grid;
+  gap: 8px;
+  min-width: min(280px, 86%);
+}
+
+.agent-working-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 900;
+}
+
+.agent-working-row .agent-spinner {
+  color: var(--primary);
+}
+
+.agent-progress {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.agent-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--primary);
+  animation: agent-progress 1.15s ease-in-out infinite;
+}
+
 .agent-panel form {
   display: grid;
   gap: 10px;
@@ -946,6 +1010,43 @@ select:focus {
 .agent-panel textarea {
   margin-top: 0;
   min-height: 82px;
+}
+
+.agent-panel textarea:disabled {
+  color: var(--muted);
+  background: #f8fafc;
+  cursor: wait;
+}
+
+.agent-panel .button svg {
+  flex: 0 0 auto;
+}
+
+@keyframes agent-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes agent-pulse {
+  70% {
+    box-shadow: 0 0 0 12px rgba(79, 70, 229, 0), 0 18px 36px rgba(79, 70, 229, 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(79, 70, 229, 0), 0 18px 36px rgba(79, 70, 229, 0.28);
+  }
+}
+
+@keyframes agent-progress {
+  0% {
+    transform: translateX(-110%);
+  }
+  55% {
+    transform: translateX(95%);
+  }
+  100% {
+    transform: translateX(240%);
+  }
 }
 
 @media (max-width: 960px) {

@@ -41,23 +41,27 @@ export function App() {
       const next = await httpPlannerApi.createPlan(input);
       setDraft(next);
       setActiveStep("proposal");
+      return true;
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "일정 생성 실패");
+      return false;
     } finally {
       setBusy(false);
     }
   };
 
   const replan = async (input: ReplanInput) => {
-    if (!draft) return;
+    if (!draft) return false;
     setBusy(true);
     setError(null);
     try {
       const next = await httpPlannerApi.replan(draft, input);
       setDraft(next);
       setActiveStep("proposal");
+      return true;
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "재배치 실패");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -71,7 +75,11 @@ export function App() {
   };
 
   return (
-    <AppShell activeStep={activeStep} aiConnected={aiConnected}>
+    <AppShell
+      activeStep={activeStep}
+      aiConnected={aiConnected}
+      onConnectAi={() => setAiConnected(true)}
+    >
       {error && <div className="app-error" role="alert">{error}</div>}
       {activeStep === "setup" && (
         <SetupView

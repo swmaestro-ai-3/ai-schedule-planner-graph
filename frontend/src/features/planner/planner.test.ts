@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { aiStatusButtonLabel } from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
+import { agentBusyCopy } from "./components/AgentChat";
 import { plannerSteps } from "./data/plannerSteps";
 import { calendarBlocks, weekDateLabels } from "./lib/calendar";
 import type { ScheduleItem } from "./types/planner";
@@ -83,5 +85,21 @@ describe("planner frontend contracts", () => {
     expect(before?.dayIndex).toBe(0);
     expect(after?.dayIndex).toBe(1);
     expect(next.replanCount).toBe(1);
+  });
+
+  it("uses explicit agent progress copy for create and replan states", () => {
+    expect(agentBusyCopy(false)).toEqual({
+      title: "일정안을 만드는 중",
+      detail: "요청을 구조화하고 가용 시간에 맞춰 캘린더 블록을 배치하고 있습니다.",
+    });
+    expect(agentBusyCopy(true)).toEqual({
+      title: "요청을 반영하는 중",
+      detail: "기존 일정과 피드백을 비교해서 주간 캘린더를 다시 배치하고 있습니다.",
+    });
+  });
+
+  it("labels the disconnected AI status pill as a connection action", () => {
+    expect(aiStatusButtonLabel(false)).toBe("AI 미연결, 클릭해서 연결");
+    expect(aiStatusButtonLabel(true)).toBe("AI 연결됨");
   });
 });
