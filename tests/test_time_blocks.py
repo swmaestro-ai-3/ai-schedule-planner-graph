@@ -63,6 +63,35 @@ def test_fixed_event_buffers_reduce_free_blocks():
     ]
 
 
+def test_availability_windows_create_weekly_free_blocks_by_day():
+    blocks = compute_free_blocks(
+        0,
+        840,
+        [
+            NormalizedFixedEvent(
+                id="meeting-1",
+                title="팀 미팅",
+                day_offset=1,
+                start_offset=90,
+                end_offset=120,
+            )
+        ],
+        availability_blocks=[
+            FreeBlock(id="available-0", day_offset=0, start_offset=0, end_offset=240),
+            FreeBlock(id="available-1", day_offset=1, start_offset=60, end_offset=180),
+        ],
+    )
+
+    assert [
+        (block.day_offset, block.start_offset, block.end_offset)
+        for block in blocks
+    ] == [
+        (0, 0, 240),
+        (1, 60, 90),
+        (1, 120, 180),
+    ]
+
+
 def test_classifies_blocks_by_duration():
     assert classify_free_block(FreeBlock(id="b1", start_offset=0, end_offset=20)) == BlockType.BUFFER
     assert classify_free_block(FreeBlock(id="b2", start_offset=0, end_offset=60)) == BlockType.LIGHT_WORK

@@ -167,6 +167,102 @@ def test_snoozed_task_is_scheduled_on_future_day():
     assert "스누즈" in task_items[0].reason
 
 
+def test_task_date_range_uses_matching_future_available_day():
+    task = Task(
+        id="algorithm",
+        title="알고리즘 과제",
+        estimated_minutes=120,
+        priority=5,
+        start_date=date(2026, 6, 5),
+        end_date=date(2026, 6, 5),
+        splittable=False,
+        focus_type=FocusType.DEEP,
+    )
+
+    draft = place_tasks(
+        make_plan([task]),
+        [
+            FreeBlock(id="d0", day_offset=0, start_offset=0, end_offset=180, block_type=BlockType.DEEP_WORK),
+            FreeBlock(id="d2", day_offset=2, start_offset=60, end_offset=240, block_type=BlockType.DEEP_WORK),
+        ],
+    )
+
+    task_items = [item for item in draft.schedule_items if item.type == ScheduleItemType.TASK]
+    assert len(task_items) == 1
+    assert task_items[0].day_offset == 2
+    assert task_items[0].start_offset == 60
+
+
+def test_tasks_spread_across_week_when_first_day_time_is_insufficient():
+    first = Task(
+        id="first",
+        title="첫 번째 과제",
+        estimated_minutes=120,
+        priority=5,
+        start_date=date(2026, 6, 3),
+        end_date=date(2026, 6, 9),
+        splittable=False,
+    )
+    second = Task(
+        id="second",
+        title="두 번째 과제",
+        estimated_minutes=120,
+        priority=4,
+        start_date=date(2026, 6, 3),
+        end_date=date(2026, 6, 9),
+        splittable=False,
+    )
+
+    draft = place_tasks(
+        make_plan([second, first]),
+        [
+            FreeBlock(id="d0", day_offset=0, start_offset=0, end_offset=120, block_type=BlockType.DEEP_WORK),
+            FreeBlock(id="d1", day_offset=1, start_offset=0, end_offset=120, block_type=BlockType.DEEP_WORK),
+        ],
+    )
+
+    task_items = [item for item in draft.schedule_items if item.type == ScheduleItemType.TASK]
+    assert [(item.source_id, item.day_offset) for item in task_items] == [
+        ("first", 0),
+        ("second", 1),
+    ]
+
+
+def test_tasks_balance_across_available_days_when_first_day_has_capacity():
+    first = Task(
+        id="first",
+        title="첫 번째 과제",
+        estimated_minutes=60,
+        priority=5,
+        start_date=date(2026, 6, 3),
+        end_date=date(2026, 6, 9),
+        splittable=False,
+    )
+    second = Task(
+        id="second",
+        title="두 번째 과제",
+        estimated_minutes=60,
+        priority=4,
+        start_date=date(2026, 6, 3),
+        end_date=date(2026, 6, 9),
+        splittable=False,
+    )
+
+    draft = place_tasks(
+        make_plan([second, first]),
+        [
+            FreeBlock(id="d0", day_offset=0, start_offset=0, end_offset=240, block_type=BlockType.DEEP_WORK),
+            FreeBlock(id="d1", day_offset=1, start_offset=0, end_offset=240, block_type=BlockType.DEEP_WORK),
+        ],
+    )
+
+    task_items = [item for item in draft.schedule_items if item.type == ScheduleItemType.TASK]
+    assert [(item.source_id, item.day_offset) for item in task_items] == [
+        ("first", 0),
+        ("second", 1),
+    ]
+
+
 def test_schedule_contains_fixed_task_and_buffer_items_in_order():
     task = Task(
         id="review",

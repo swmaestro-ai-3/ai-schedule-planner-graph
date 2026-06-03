@@ -47,9 +47,17 @@ class TimeRange(BaseModel):
     end_time: time
 
 
+class AvailabilityWindow(BaseModel):
+    id: str
+    day_offset: int = Field(default=0, ge=0, le=6)
+    start_time: time
+    end_time: time
+
+
 class FixedEvent(BaseModel):
     id: str
     title: str
+    day_offset: int = Field(default=0, ge=0, le=6)
     start_time: time
     end_time: time
     category: str | None = None
@@ -63,6 +71,8 @@ class Task(BaseModel):
     title: str
     estimated_minutes: int | None = Field(default=None, gt=0)
     priority: int = Field(default=3, ge=1, le=5)
+    start_date: date | None = None
+    end_date: date | None = None
     deadline: date | datetime | None = None
     splittable: bool
     min_chunk_minutes: int = Field(default=30, gt=0)
@@ -76,6 +86,7 @@ class DayPlanInput(BaseModel):
     timezone: str = "Asia/Seoul"
     day_start: time
     day_end: time
+    availability_windows: list[AvailabilityWindow] = Field(default_factory=list)
     fixed_events: list[FixedEvent]
     tasks: list[Task]
     buffer_ratio: float = Field(default=0.1, ge=0, le=1)
@@ -86,6 +97,7 @@ class DayPlanInput(BaseModel):
 class NormalizedFixedEvent(BaseModel):
     id: str
     title: str
+    day_offset: int = 0
     start_offset: int
     end_offset: int
     category: str | None = None
@@ -104,6 +116,7 @@ class NormalizedTask(Task):
 
 class FreeBlock(BaseModel):
     id: str
+    day_offset: int = 0
     start_offset: int
     end_offset: int
     block_type: BlockType | None = None

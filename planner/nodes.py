@@ -7,7 +7,7 @@ from planner.llm_parser import (
     interpret_rejection_reason,
     parse_natural_language_input,
 )
-from planner.models import DraftPlan
+from planner.models import DraftPlan, FreeBlock
 from planner.scheduler import (
     classify_free_blocks,
     compute_free_blocks,
@@ -16,6 +16,7 @@ from planner.scheduler import (
 from planner.state import PlannerState
 from planner.validators import (
     build_final_output,
+    normalize_availability_windows,
     normalize_fixed_events,
     normalize_tasks,
     time_to_minutes,
@@ -121,6 +122,7 @@ def clarification_node(state: PlannerState) -> PlannerState:
 def normalize_time_node(state: PlannerState) -> PlannerState:
     plan_input = state["parsed_input"]
     return {
+        "normalized_availability": normalize_availability_windows(plan_input),
         "normalized_events": normalize_fixed_events(plan_input),
         "normalized_tasks": normalize_tasks(plan_input),
     }
@@ -129,11 +131,21 @@ def normalize_time_node(state: PlannerState) -> PlannerState:
 def compute_free_blocks_node(state: PlannerState) -> PlannerState:
     plan_input = state["parsed_input"]
     day_length = time_to_minutes(plan_input.day_end) - time_to_minutes(plan_input.day_start)
+    availability_blocks = state.get("normalized_availability") or [
+        FreeBlock(
+            id=f"default-available-{day_offset}",
+            day_offset=day_offset,
+            start_offset=0,
+            end_offset=day_length,
+        )
+        for day_offset in range(7)
+    ]
     return {
         "free_blocks": compute_free_blocks(
             0,
             day_length,
             state.get("normalized_events", []),
+            availability_blocks=availability_blocks,
         )
     }
 

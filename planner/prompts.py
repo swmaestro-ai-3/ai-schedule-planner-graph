@@ -3,6 +3,8 @@ PARSE_DAY_PLAN_PROMPT = """
 응답은 JSON만 반환한다.
 시간 계산, free block 계산, 작업 배치는 수행하지 않는다.
 필수 필드가 없으면 추측하지 말고 누락 정보를 표시한다.
+availability_windows는 작업 배치가 가능한 주간 시간대다. 사용자가 가용시간을 말하면 day_offset(기준일 0~6), start_time, end_time으로 넣는다.
+각 task에는 사용자가 말한 시작 가능 날짜(start_date)와 종료 날짜(end_date)를 넣는다.
 """
 
 INTERPRET_REJECTION_PROMPT = """

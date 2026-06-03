@@ -21,6 +21,7 @@ class PlannerState(TypedDict, total=False):
     parsed_input: DayPlanInput
     input_errors: list[ValidationIssue]
     clarification_questions: list[str]
+    normalized_availability: list[FreeBlock]
     normalized_events: list[NormalizedFixedEvent]
     normalized_tasks: list[NormalizedTask]
     free_blocks: list[FreeBlock]
