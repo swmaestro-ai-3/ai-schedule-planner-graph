@@ -125,6 +125,11 @@ def structured_input_summary_cards(
     ]
 
 
+def build_snooze_feedback_text(*, task_id: str, task_title: str, days: int) -> str:
+    safe_days = max(1, min(days, 6))
+    return f"snooze task_id={task_id} days={safe_days} title={task_title}"
+
+
 def fixed_event_editor_column_labels() -> dict[str, str]:
     return {
         "id": "ID",
@@ -309,13 +314,27 @@ def _offset_to_time(day_start: time, offset_minutes: int) -> str:
     return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
 
 
+def _date_label(plan_date: date, day_offset: int) -> str:
+    return (plan_date + timedelta(days=day_offset)).strftime("%Y/%m/%d")
+
+
+def _schedule_item_day_offset(item: ScheduleItem) -> int:
+    raw_offset = getattr(item, "day_offset", 0)
+    try:
+        return max(0, min(int(raw_offset), 6))
+    except (TypeError, ValueError):
+        return 0
+
+
 def schedule_items_to_rows(
     items: list[ScheduleItem],
     *,
     day_start: time,
+    plan_date: date | None = None,
 ) -> list[dict[str, str]]:
-    return [
-        {
+    rows: list[dict[str, str]] = []
+    for item in items:
+        row = {
             "time": (
                 f"{_offset_to_time(day_start, item.start_offset)}"
                 f"~{_offset_to_time(day_start, item.end_offset)}"
@@ -324,8 +343,10 @@ def schedule_items_to_rows(
             "title": item.title,
             "reason": item.reason,
         }
-        for item in items
-    ]
+        if plan_date is not None:
+            row = {"date": _date_label(plan_date, _schedule_item_day_offset(item)), **row}
+        rows.append(row)
+    return rows
 
 
 def schedule_items_to_calendar_blocks(
@@ -347,6 +368,48 @@ def schedule_items_to_calendar_blocks(
         end = max(start, min(item.end_offset, day_length))
         blocks.append(
             {
+                "top": start,
+                "height": max(8, end - start),
+                "time": (
+                    f"{_offset_to_time(day_start, item.start_offset)}"
+                    f"~{_offset_to_time(day_start, item.end_offset)}"
+                ),
+                "type": item.type.value,
+                "title": item.title,
+                "reason": item.reason,
+            }
+        )
+    return blocks
+
+
+def schedule_items_to_week_calendar_blocks(
+    items: list[ScheduleItem],
+    *,
+    plan_date: date,
+    day_start: time,
+    day_end: time,
+    days: int = 7,
+) -> list[dict[str, Any]]:
+    day_length = int(
+        (
+            timedelta(hours=day_end.hour, minutes=day_end.minute)
+            - timedelta(hours=day_start.hour, minutes=day_start.minute)
+        ).total_seconds()
+        // 60
+    )
+    blocks: list[dict[str, Any]] = []
+    for item in items:
+        day_offset = _schedule_item_day_offset(item)
+        if day_offset >= days:
+            continue
+        start = max(0, min(item.start_offset, day_length))
+        end = max(start, min(item.end_offset, day_length))
+        block_date = plan_date + timedelta(days=day_offset)
+        blocks.append(
+            {
+                "day_offset": day_offset,
+                "date": block_date.strftime("%Y/%m/%d"),
+                "weekday": block_date.strftime("%a"),
                 "top": start,
                 "height": max(8, end - start),
                 "time": (
@@ -404,6 +467,7 @@ def schedule_change_summary(
     current_items: list[ScheduleItem],
     *,
     day_start: time,
+    plan_date: date | None = None,
 ) -> list[dict[str, str]]:
     previous_by_key = {
         item.source_id or item.title: item
@@ -420,22 +484,40 @@ def schedule_change_summary(
         if (
             previous.start_offset == item.start_offset
             and previous.end_offset == item.end_offset
+            and _schedule_item_day_offset(previous) == _schedule_item_day_offset(item)
         ):
             continue
         rows.append(
             {
                 "task": item.title,
-                "before": (
-                    f"{_offset_to_time(day_start, previous.start_offset)}"
-                    f"~{_offset_to_time(day_start, previous.end_offset)}"
+                "before": _format_schedule_item_range(
+                    previous,
+                    day_start=day_start,
+                    plan_date=plan_date,
                 ),
-                "after": (
-                    f"{_offset_to_time(day_start, item.start_offset)}"
-                    f"~{_offset_to_time(day_start, item.end_offset)}"
+                "after": _format_schedule_item_range(
+                    item,
+                    day_start=day_start,
+                    plan_date=plan_date,
                 ),
             }
         )
     return rows
+
+
+def _format_schedule_item_range(
+    item: ScheduleItem,
+    *,
+    day_start: time,
+    plan_date: date | None = None,
+) -> str:
+    time_range = (
+        f"{_offset_to_time(day_start, item.start_offset)}"
+        f"~{_offset_to_time(day_start, item.end_offset)}"
+    )
+    if plan_date is None:
+        return time_range
+    return f"{_date_label(plan_date, _schedule_item_day_offset(item))} {time_range}"
 
 
 def warning_summary_rows(
@@ -476,7 +558,11 @@ def render_result(state: dict[str, Any], plan_input: DayPlanInput) -> None:
 
     st.subheader("일정표")
     st.dataframe(
-        schedule_items_to_rows(output_items, day_start=plan_input.day_start),
+        schedule_items_to_rows(
+            output_items,
+            day_start=plan_input.day_start,
+            plan_date=plan_input.date,
+        ),
         width="stretch",
         hide_index=True,
     )
@@ -512,8 +598,9 @@ def _calendar_block_class(item_type: str) -> str:
 
 
 def render_calendar_view(items: list[ScheduleItem], plan_input: DayPlanInput) -> None:
-    blocks = schedule_items_to_calendar_blocks(
+    blocks = schedule_items_to_week_calendar_blocks(
         items,
+        plan_date=plan_input.date,
         day_start=plan_input.day_start,
         day_end=plan_input.day_end,
     )
@@ -533,41 +620,85 @@ def render_calendar_view(items: list[ScheduleItem], plan_input: DayPlanInput) ->
         f'<div class="calendar-hour" style="top:{offset * scale:.1f}px">{label}</div>'
         for offset, label in _calendar_hours(plan_input.day_start, plan_input.day_end)
     )
-    block_html = "\n".join(
+    day_headers = "\n".join(
         (
-            f'<div class="calendar-block {_calendar_block_class(block["type"])}" '
-            f'style="top:{block["top"] * scale:.1f}px;'
-            f'height:{max(22, block["height"] * scale):.1f}px">'
-            f'<div class="calendar-block-time">{escape(block["time"])}</div>'
-            f'<div class="calendar-block-title">{escape(block["title"])}</div>'
-            f'<div class="calendar-block-reason">{escape(block["reason"])}</div>'
+            '<div class="calendar-day-header">'
+            f'<div class="calendar-day-weekday">{escape((plan_input.date + timedelta(days=offset)).strftime("%a"))}</div>'
+            f'<div class="calendar-day-date">{escape(_date_label(plan_input.date, offset))}</div>'
             "</div>"
         )
-        for block in blocks
+        for offset in range(7)
     )
+    day_lanes: list[str] = []
+    for day_offset in range(7):
+        block_html = "\n".join(
+            (
+                f'<div class="calendar-block {_calendar_block_class(block["type"])}" '
+                f'style="top:{block["top"] * scale:.1f}px;'
+                f'height:{max(22, block["height"] * scale):.1f}px">'
+                f'<div class="calendar-block-time">{escape(block["time"])}</div>'
+                f'<div class="calendar-block-title">{escape(block["title"])}</div>'
+                f'<div class="calendar-block-reason">{escape(block["reason"])}</div>'
+                "</div>"
+            )
+            for block in blocks
+            if block["day_offset"] == day_offset
+        )
+        day_lanes.append(f'<div class="calendar-lane">{block_html}</div>')
+    lanes_html = "\n".join(day_lanes)
     st.markdown(
         f"""
 <style>
 .calendar-shell {{
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 12px;
+  overflow-x: auto;
   border: 1px solid #d7dde8;
   border-radius: 8px;
   background: #f8fafc;
   padding: 14px;
   margin: 8px 0 18px;
 }}
+.calendar-grid {{
+  display: grid;
+  grid-template-columns: 64px repeat(7, minmax(128px, 1fr));
+  grid-template-rows: auto {timeline_height}px;
+  gap: 8px 10px;
+  min-width: 1040px;
+}}
 .calendar-axis {{
   position: relative;
   height: {timeline_height}px;
   color: #64748b;
   font-size: 12px;
+  grid-column: 1;
+  grid-row: 2;
 }}
 .calendar-hour {{
   position: absolute;
   right: 0;
   transform: translateY(-8px);
+}}
+.calendar-header-spacer {{
+  grid-column: 1;
+  grid-row: 1;
+}}
+.calendar-day-headers {{
+  display: contents;
+}}
+.calendar-day-header {{
+  min-width: 0;
+  color: #0f172a;
+  border-bottom: 1px solid #d7dde8;
+  padding: 0 4px 8px;
+}}
+.calendar-day-weekday {{
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.2;
+}}
+.calendar-day-date {{
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
 }}
 .calendar-lane {{
   position: relative;
@@ -617,8 +748,12 @@ def render_calendar_view(items: list[ScheduleItem], plan_input: DayPlanInput) ->
 }}
 </style>
 <div class="calendar-shell">
-  <div class="calendar-axis">{hour_rows}</div>
-  <div class="calendar-lane">{block_html}</div>
+  <div class="calendar-grid">
+    <div class="calendar-header-spacer"></div>
+    <div class="calendar-day-headers">{day_headers}</div>
+    <div class="calendar-axis">{hour_rows}</div>
+    {lanes_html}
+  </div>
 </div>
 """,
         unsafe_allow_html=True,
@@ -638,7 +773,11 @@ def render_ai_proposal_section(state: dict[str, Any], plan_input: DayPlanInput) 
     output_items = _current_output_items(state)
     render_calendar_view(output_items, plan_input)
     st.dataframe(
-        schedule_items_to_rows(output_items, day_start=plan_input.day_start),
+        schedule_items_to_rows(
+            output_items,
+            day_start=plan_input.day_start,
+            plan_date=plan_input.date,
+        ),
         width="stretch",
         hide_index=True,
     )
@@ -665,20 +804,47 @@ def render_user_feedback_section(state: dict[str, Any], plan_input: DayPlanInput
         st.rerun()
 
     rejection_reason = feedback_col.text_area("피드백", key="rejection_reason")
-    if feedback_col.button("피드백 반영해 재배치") and rejection_reason:
+    task_options = {task.id: task.title for task in plan_input.tasks}
+    snooze_task_id = feedback_col.selectbox(
+        "스누즈할 작업",
+        options=["", *task_options.keys()],
+        format_func=lambda value: "스누즈 없음" if not value else task_options[value],
+        key="snooze_task_id",
+    )
+    snooze_days = feedback_col.number_input(
+        "스누즈 일수",
+        min_value=1,
+        max_value=6,
+        value=1,
+        step=1,
+        key="snooze_days",
+    )
+    snooze_feedback = (
+        build_snooze_feedback_text(
+            task_id=snooze_task_id,
+            task_title=task_options[snooze_task_id],
+            days=int(snooze_days),
+        )
+        if snooze_task_id
+        else ""
+    )
+    combined_rejection_reason = "\n".join(
+        part for part in [rejection_reason.strip(), snooze_feedback] if part
+    )
+    if feedback_col.button("피드백 반영해 재배치") and combined_rejection_reason:
         previous_items = _current_output_items(state)
         graph = build_planner_graph()
         next_state = graph.invoke(
             {
                 "parsed_input": plan_input,
                 "approval_status": "rejected",
-                "rejection_reason": rejection_reason,
+                "rejection_reason": combined_rejection_reason,
                 "replan_count": state.get("replan_count", 0),
                 "use_llm_replan": check_openai_oauth_proxy().connected,
             }
         )
         st.session_state["previous_schedule_items"] = previous_items
-        st.session_state["last_feedback"] = rejection_reason
+        st.session_state["last_feedback"] = combined_rejection_reason
         st.session_state["planner_state"] = next_state
         st.rerun()
 
@@ -697,6 +863,7 @@ def render_replan_section(state: dict[str, Any], plan_input: DayPlanInput) -> No
         st.session_state.get("previous_schedule_items", []),
         _current_output_items(state),
         day_start=plan_input.day_start,
+        plan_date=plan_input.date,
     )
     if change_rows:
         st.dataframe(change_rows, width="stretch", hide_index=True)
@@ -714,6 +881,8 @@ def reset_replan_session_state() -> None:
     st.session_state.pop("previous_schedule_items", None)
     st.session_state.pop("last_feedback", None)
     st.session_state.pop("rejection_reason", None)
+    st.session_state.pop("snooze_task_id", None)
+    st.session_state.pop("snooze_days", None)
 
 
 def submit_structured_plan(

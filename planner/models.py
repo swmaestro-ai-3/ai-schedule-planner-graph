@@ -119,6 +119,7 @@ class ScheduleItem(BaseModel):
     title: str
     start_offset: int
     end_offset: int
+    day_offset: int = Field(default=0, ge=0, le=6)
     source_id: str | None = None
     block_type: BlockType | None = None
     reason: str = ""
@@ -186,6 +187,7 @@ class ReplanConstraints(BaseModel):
     excluded_task_ids: list[str] = Field(default_factory=list)
     preferred_windows: dict[str, str] = Field(default_factory=dict)
     fixed_event_buffer_after: int = 0
+    snoozed_task_days: dict[str, int] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
 
 
