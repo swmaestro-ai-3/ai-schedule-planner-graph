@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from collections.abc import Callable
 from datetime import date
@@ -67,7 +68,14 @@ def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "replan_count": state.get("replan_count", 0),
         "date": plan_input.date.isoformat() if plan_input else None,
-        "task_ids": [task.id for task in plan_input.tasks] if plan_input else [],
+        "tasks": [
+            {
+                "id": task.id,
+                "title": task.title,
+                "estimated_minutes": task.estimated_minutes,
+            }
+            for task in (plan_input.tasks if plan_input else [])
+        ],
         "schedule_items": [
             {
                 "type": item.type.value,
@@ -156,19 +164,60 @@ def _interpret_rejection_reason_with_rules(
         constraints.fixed_event_buffer_after = 15
     if "오늘 안 해도" in reason:
         constraints.notes.append("사용자가 일부 작업 제외를 요청했습니다.")
+    snooze_match = re.search(r"snooze\s+task_id=([^\s]+)\s+days=(\d+)", reason)
+    if snooze_match:
+        constraints.snoozed_task_days[snooze_match.group(1)] = int(
+            snooze_match.group(2)
+        )
     return constraints
+
+
+def _normalize_snoozed_task_days(values: dict[str, int]) -> dict[str, int]:
+    return {
+        str(task_id): max(1, min(int(days), 6))
+        for task_id, days in values.items()
+        if task_id and int(days) > 0
+    }
 
 
 def _normalize_replan_constraints(
     constraints: ReplanConstraints,
     reason: str,
 ) -> ReplanConstraints:
+    updates: dict[str, Any] = {}
     if (
         ("회의 직후" in reason or "수업 직후" in reason or "직후에는 쉬" in reason)
         and constraints.fixed_event_buffer_after < 15
     ):
-        return constraints.model_copy(update={"fixed_event_buffer_after": 15})
+        updates["fixed_event_buffer_after"] = 15
+    normalized_snoozes = _normalize_snoozed_task_days(constraints.snoozed_task_days)
+    if normalized_snoozes != constraints.snoozed_task_days:
+        updates["snoozed_task_days"] = normalized_snoozes
+    if updates:
+        return constraints.model_copy(update=updates)
     return constraints
+
+
+def _merge_rule_constraints(
+    constraints: ReplanConstraints,
+    reason: str,
+) -> ReplanConstraints:
+    rule_constraints = _interpret_rejection_reason_with_rules(reason)
+    updates: dict[str, Any] = {}
+
+    if rule_constraints.buffer_ratio_delta and not constraints.buffer_ratio_delta:
+        updates["buffer_ratio_delta"] = rule_constraints.buffer_ratio_delta
+    if rule_constraints.fixed_event_buffer_after > constraints.fixed_event_buffer_after:
+        updates["fixed_event_buffer_after"] = rule_constraints.fixed_event_buffer_after
+    if rule_constraints.snoozed_task_days:
+        updates["snoozed_task_days"] = {
+            **constraints.snoozed_task_days,
+            **rule_constraints.snoozed_task_days,
+        }
+
+    if not updates:
+        return constraints
+    return constraints.model_copy(update=updates)
 
 
 def interpret_rejection_reason(
@@ -185,8 +234,11 @@ def interpret_rejection_reason(
                     build_rejection_interpretation_payload(reason, current_state)
                 )
                 return _normalize_replan_constraints(
-                    ReplanConstraints.model_validate(
-                        response.get("replan_constraints", response)
+                    _merge_rule_constraints(
+                        ReplanConstraints.model_validate(
+                            response.get("replan_constraints", response)
+                        ),
+                        reason,
                     ),
                     reason,
                 )

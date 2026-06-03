@@ -76,6 +76,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     assert payload["input"] == "너무 빡빡하니 여유 시간을 늘려줘"
     assert "ReplanConstraints" in payload["prompt"]
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+    assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
 
 
 def test_ai_rejection_interpreter_can_use_sidecar_response():
@@ -120,6 +121,58 @@ def test_ai_rejection_interpreter_normalizes_tiny_after_event_buffer():
     )
 
     assert constraints.fixed_event_buffer_after == 15
+
+
+def test_rejection_reason_with_machine_readable_snooze_sets_task_day():
+    constraints = interpret_rejection_reason(
+        "snooze task_id=algorithm days=2 title=알고리즘 과제",
+    )
+
+    assert constraints.snoozed_task_days == {"algorithm": 2}
+
+
+def test_machine_readable_snooze_overrides_sidecar_omission():
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "preferred_windows": {},
+                "fixed_event_buffer_after": 0,
+                "snoozed_task_days": {},
+                "notes": ["모델이 스누즈를 누락했습니다."],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "snooze task_id=algorithm days=2 title=알고리즘 과제",
+        sidecar=fake_sidecar,
+    )
+
+    assert constraints.snoozed_task_days == {"algorithm": 2}
+
+
+def test_ai_rejection_interpreter_clamps_snooze_days_to_week():
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "preferred_windows": {},
+                "fixed_event_buffer_after": 0,
+                "snoozed_task_days": {"algorithm": 9},
+                "notes": ["다음 주로 미루기"],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "알고리즘 과제를 다음 주로 미뤄줘",
+        sidecar=fake_sidecar,
+    )
+
+    assert constraints.snoozed_task_days == {"algorithm": 6}
 
 
 def test_missing_date_validation_error_creates_clarification_question():

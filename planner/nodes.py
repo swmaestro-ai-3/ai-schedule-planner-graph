@@ -165,11 +165,15 @@ def rank_tasks_node(state: PlannerState) -> PlannerState:
 
 def place_tasks_node(state: PlannerState) -> PlannerState:
     plan_input = state["parsed_input"]
+    replan_constraints = state.get("replan_constraints")
     draft = place_tasks(
         plan_input,
         state.get("classified_blocks", []),
         ranked_tasks=state.get("ranked_tasks"),
         normalized_events=state.get("normalized_events"),
+        snoozed_task_days=replan_constraints.snoozed_task_days
+        if replan_constraints
+        else None,
     )
     return {
         "draft_plan": draft,

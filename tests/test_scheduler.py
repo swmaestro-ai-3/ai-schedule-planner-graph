@@ -142,6 +142,31 @@ def test_buffer_protection_can_leave_low_priority_task_unassigned():
     assert draft.unassigned_tasks[0].reason_code == UnassignedReasonCode.BUFFER_PROTECTION
 
 
+def test_snoozed_task_is_scheduled_on_future_day():
+    task = Task(
+        id="algorithm",
+        title="알고리즘 과제",
+        estimated_minutes=120,
+        priority=5,
+        splittable=False,
+        focus_type=FocusType.DEEP,
+    )
+
+    draft = place_tasks(
+        make_plan([task]),
+        [FreeBlock(id="b1", start_offset=180, end_offset=360, block_type=BlockType.DEEP_WORK)],
+        snoozed_task_days={"algorithm": 1},
+    )
+
+    task_items = [item for item in draft.schedule_items if item.type == ScheduleItemType.TASK]
+    assert len(task_items) == 1
+    assert task_items[0].source_id == "algorithm"
+    assert task_items[0].day_offset == 1
+    assert task_items[0].start_offset == 0
+    assert task_items[0].end_offset == 120
+    assert "스누즈" in task_items[0].reason
+
+
 def test_schedule_contains_fixed_task_and_buffer_items_in_order():
     task = Task(
         id="review",

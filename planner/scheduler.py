@@ -155,6 +155,22 @@ def _make_task_item(
     )
 
 
+def _make_snoozed_task_item(task: Task, day_offset: int) -> ScheduleItem:
+    assert task.estimated_minutes is not None
+    return ScheduleItem(
+        type=ScheduleItemType.TASK,
+        title=task.title,
+        start_offset=0,
+        end_offset=task.estimated_minutes,
+        day_offset=max(1, min(day_offset, 6)),
+        source_id=task.id,
+        block_type=BlockType.DEEP_WORK
+        if task.estimated_minutes >= 90
+        else BlockType.LIGHT_WORK,
+        reason=f"사용자 피드백으로 {max(1, min(day_offset, 6))}일 뒤로 스누즈했습니다.",
+    )
+
+
 def _placement_reason(task: Task, block_type: BlockType | None) -> str:
     if task.deadline is not None:
         return "마감일과 우선순위를 고려해 배치했습니다."
@@ -232,6 +248,7 @@ def place_tasks(
     classified_blocks: list[FreeBlock],
     ranked_tasks: list[Task] | None = None,
     normalized_events: list[NormalizedFixedEvent] | None = None,
+    snoozed_task_days: dict[str, int] | None = None,
 ) -> DraftPlan:
     blocks = [block.model_copy() for block in classified_blocks]
     total_free_minutes = _remaining_free_minutes(blocks)
@@ -260,10 +277,16 @@ def place_tasks(
         key=lambda task: _task_sort_key(task, plan_input),
         reverse=True,
     )
+    snoozed_task_days = snoozed_task_days or {}
 
     for task in tasks:
         if task.estimated_minutes is None:
             _append_unassigned(draft_plan, task, UnassignedReasonCode.MISSING_DURATION)
+            continue
+        if task.id in snoozed_task_days:
+            draft_plan.schedule_items.append(
+                _make_snoozed_task_item(task, snoozed_task_days[task.id])
+            )
             continue
         if task.splittable:
             _place_splittable_task(draft_plan, task, blocks, plan_input)
@@ -273,7 +296,7 @@ def place_tasks(
     _add_remaining_blocks_as_buffers(draft_plan, blocks)
     draft_plan.schedule_items = sorted(
         draft_plan.schedule_items,
-        key=lambda item: (item.start_offset, item.end_offset, item.type.value),
+        key=lambda item: (item.day_offset, item.start_offset, item.end_offset, item.type.value),
     )
     draft_plan.free_blocks = blocks
     return draft_plan

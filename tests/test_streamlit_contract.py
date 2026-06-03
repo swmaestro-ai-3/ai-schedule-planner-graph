@@ -1,8 +1,10 @@
 from datetime import date, time
 from pathlib import Path
+from types import SimpleNamespace
 
 from app import (
     build_google_oauth_config,
+    build_snooze_feedback_text,
     build_structured_input,
     exportable_schedule_items,
     fixed_events_to_editor_rows,
@@ -13,6 +15,7 @@ from app import (
     schedule_change_summary,
     schedule_items_to_calendar_blocks,
     schedule_items_to_rows,
+    schedule_items_to_week_calendar_blocks,
     should_show_openai_oauth_button,
     structured_input_editor_column_order,
     structured_input_action_labels,
@@ -120,6 +123,14 @@ def test_structured_input_summary_cards_are_scan_friendly():
         {"label": "여유", "value": "10%"},
         {"label": "입력", "value": "고정 1개 / 작업 2개"},
     ]
+
+
+def test_build_snooze_feedback_text_is_machine_readable():
+    assert build_snooze_feedback_text(
+        task_id="algorithm",
+        task_title="알고리즘 과제",
+        days=2,
+    ) == "snooze task_id=algorithm days=2 title=알고리즘 과제"
 
 
 def test_schedule_items_to_rows_formats_offsets():
@@ -325,6 +336,58 @@ def test_schedule_items_to_calendar_blocks_maps_position_and_size():
     assert blocks[1]["type"] == "task"
 
 
+def test_schedule_items_to_week_calendar_blocks_keeps_day_offsets():
+    blocks = schedule_items_to_week_calendar_blocks(
+        [
+            ScheduleItem(
+                type=ScheduleItemType.TASK,
+                title="알고리즘 과제",
+                start_offset=0,
+                end_offset=120,
+                day_offset=1,
+                reason="사용자 요청으로 스누즈했습니다.",
+            )
+        ],
+        plan_date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+    )
+
+    assert blocks == [
+        {
+            "day_offset": 1,
+            "date": "2026/06/04",
+            "weekday": "Thu",
+            "top": 0,
+            "height": 120,
+            "time": "09:00~11:00",
+            "type": "task",
+            "title": "알고리즘 과제",
+            "reason": "사용자 요청으로 스누즈했습니다.",
+        }
+    ]
+
+
+def test_week_calendar_blocks_treat_legacy_items_as_today():
+    blocks = schedule_items_to_week_calendar_blocks(
+        [
+            SimpleNamespace(
+                type=ScheduleItemType.TASK,
+                title="레거시 작업",
+                start_offset=60,
+                end_offset=120,
+                reason="기존 세션 데이터",
+            )
+        ],
+        plan_date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+    )
+
+    assert blocks[0]["day_offset"] == 0
+    assert blocks[0]["date"] == "2026/06/03"
+
+
 def test_validation_panel_rows_summarizes_user_review_inputs():
     task = Task(
         id="low",
@@ -392,6 +455,76 @@ def test_schedule_change_summary_reports_moved_tasks():
             "task": "알고리즘 과제",
             "before": "10:00~12:00",
             "after": "12:00~14:00",
+        }
+    ]
+
+
+def test_schedule_change_summary_reports_snoozed_tasks_with_dates():
+    previous = [
+        ScheduleItem(
+            type=ScheduleItemType.TASK,
+            title="알고리즘 과제",
+            source_id="task-1",
+            start_offset=180,
+            end_offset=300,
+        )
+    ]
+    current = [
+        ScheduleItem(
+            type=ScheduleItemType.TASK,
+            title="알고리즘 과제",
+            source_id="task-1",
+            start_offset=0,
+            end_offset=120,
+            day_offset=1,
+        )
+    ]
+
+    assert schedule_change_summary(
+        previous,
+        current,
+        day_start=time(9, 0),
+        plan_date=date(2026, 6, 3),
+    ) == [
+        {
+            "task": "알고리즘 과제",
+            "before": "2026/06/03 12:00~14:00",
+            "after": "2026/06/04 09:00~11:00",
+        }
+    ]
+
+
+def test_schedule_change_summary_reports_day_only_moves():
+    previous = [
+        ScheduleItem(
+            type=ScheduleItemType.TASK,
+            title="알고리즘 과제",
+            source_id="task-1",
+            start_offset=0,
+            end_offset=120,
+        )
+    ]
+    current = [
+        ScheduleItem(
+            type=ScheduleItemType.TASK,
+            title="알고리즘 과제",
+            source_id="task-1",
+            start_offset=0,
+            end_offset=120,
+            day_offset=1,
+        )
+    ]
+
+    assert schedule_change_summary(
+        previous,
+        current,
+        day_start=time(9, 0),
+        plan_date=date(2026, 6, 3),
+    ) == [
+        {
+            "task": "알고리즘 과제",
+            "before": "2026/06/03 09:00~11:00",
+            "after": "2026/06/04 09:00~11:00",
         }
     ]
 

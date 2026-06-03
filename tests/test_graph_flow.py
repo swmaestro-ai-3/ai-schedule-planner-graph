@@ -138,6 +138,42 @@ def test_rejected_input_can_use_ai_replan_interpreter(monkeypatch):
     assert "AI가 사용자 피드백" in result["replan_constraints"].notes[0]
 
 
+def test_rejected_input_can_snooze_task_to_next_day(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "preferred_windows": {},
+                "fixed_event_buffer_after": 0,
+                "snoozed_task_days": {"task-1": 1},
+                "notes": ["사용자가 코드 리뷰를 내일로 스누즈했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    result = invoke_graph(
+        {
+            "parsed_input": make_valid_input(),
+            "approval_status": "rejected",
+            "rejection_reason": "코드 리뷰는 내일로 미뤄줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    task_items = [
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "task-1"
+    ]
+    assert len(task_items) == 1
+    assert task_items[0].day_offset == 1
+    assert task_items[0].start_offset == 0
+    assert result["replan_constraints"].snoozed_task_days == {"task-1": 1}
+
+
 def test_replan_limit_stops_automatic_replanning():
     result = invoke_graph(
         {
