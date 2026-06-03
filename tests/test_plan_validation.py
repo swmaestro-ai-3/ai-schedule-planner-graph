@@ -125,3 +125,33 @@ def test_rule_based_explanation_mentions_unassigned_tasks():
 
     assert "중요 작업" in explanation
     assert "미배치 작업 1개" in explanation
+
+
+def test_rule_based_explanation_mentions_fixed_events_without_tasks():
+    draft = DraftPlan(
+        schedule_items=[
+            ScheduleItem(
+                type=ScheduleItemType.FIXED_EVENT,
+                title="운동",
+                start_offset=360,
+                end_offset=420,
+                day_offset=0,
+                source_id="exercise-mon",
+                reason="고정 일정입니다.",
+            ),
+            ScheduleItem(
+                type=ScheduleItemType.FIXED_EVENT,
+                title="운동",
+                start_offset=360,
+                end_offset=420,
+                day_offset=1,
+                source_id="exercise-tue",
+                reason="고정 일정입니다.",
+            ),
+        ]
+    )
+
+    explanation = build_rule_based_explanation(draft)
+
+    assert "고정 일정 2개" in explanation
+    assert "배치된 작업이 없습니다" not in explanation

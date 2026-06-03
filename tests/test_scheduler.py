@@ -320,3 +320,34 @@ def test_schedule_contains_fixed_task_and_buffer_items_in_order():
         ScheduleItemType.BUFFER,
         ScheduleItemType.FIXED_EVENT,
     ]
+
+
+def test_fixed_event_schedule_items_keep_original_day_offsets():
+    monday_event = NormalizedFixedEvent(
+        id="exercise-mon",
+        title="운동",
+        day_offset=0,
+        start_offset=360,
+        end_offset=420,
+    )
+    friday_event = NormalizedFixedEvent(
+        id="exercise-fri",
+        title="운동",
+        day_offset=4,
+        start_offset=360,
+        end_offset=420,
+    )
+
+    draft = place_tasks(
+        make_plan([]),
+        [],
+        normalized_events=[friday_event, monday_event],
+    )
+
+    fixed_items = [
+        item for item in draft.schedule_items if item.type == ScheduleItemType.FIXED_EVENT
+    ]
+    assert [(item.source_id, item.day_offset) for item in fixed_items] == [
+        ("exercise-mon", 0),
+        ("exercise-fri", 4),
+    ]

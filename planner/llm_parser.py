@@ -20,6 +20,16 @@ class LLMParserError(RuntimeError):
 
 SidecarCallable = Callable[[dict[str, Any]], dict[str, Any]]
 
+WEEKDAY_INDEXES = {
+    "월": 0,
+    "화": 1,
+    "수": 2,
+    "목": 3,
+    "금": 4,
+    "토": 5,
+    "일": 6,
+}
+
 
 def _date_or_default(value: Any, fallback: date) -> date:
     if isinstance(value, date):
@@ -40,10 +50,76 @@ def _time_text(value: Any, fallback: time) -> str:
     return fallback.strftime("%H:%M")
 
 
+def _add_minutes_to_time_text(value: str, minutes: int) -> str:
+    hour, minute = [int(part) for part in value.split(":", maxsplit=1)]
+    total_minutes = hour * 60 + minute + minutes
+    return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+
+
+def _extract_weekday_recurring_fixed_events(
+    raw_text: str,
+    *,
+    reference_date: date,
+) -> tuple[date, list[dict[str, Any]]] | None:
+    match = re.search(
+        r"([월화수목금토일])요일부터\s*([월화수목금토일])요일까지.*?매일\s*(\d{1,2})시(?:\s*(\d{1,2})분)?(?:에)?\s*(.+?)\s*(?:일정|스케줄|만들|생성|잡아|추가)",
+        raw_text,
+    )
+    if match is None:
+        return None
+
+    start_day = WEEKDAY_INDEXES[match.group(1)]
+    end_day = WEEKDAY_INDEXES[match.group(2)]
+    if end_day < start_day:
+        return None
+
+    hour = int(match.group(3))
+    minute = int(match.group(4) or 0)
+    title = match.group(5).strip() or "일정"
+    start_time = f"{hour:02d}:{minute:02d}"
+    end_time = _add_minutes_to_time_text(start_time, 60)
+    week_start = reference_date - timedelta(days=reference_date.weekday())
+    return (
+        week_start,
+        [
+            {
+                "id": f"fixed-{day_offset}-{title}",
+                "title": title,
+                "day_offset": day_offset,
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+            for day_offset in range(start_day, end_day + 1)
+        ],
+    )
+
+
+def _normalize_fixed_events_defaults(plan: dict[str, Any]) -> None:
+    fixed_events = plan.get("fixed_events")
+    if not isinstance(fixed_events, list):
+        return
+    normalized_events: list[Any] = []
+    for index, event in enumerate(fixed_events, start=1):
+        if not isinstance(event, dict):
+            normalized_events.append(event)
+            continue
+        normalized_event = dict(event)
+        normalized_event["id"] = normalized_event.get("id") or f"event-{index}"
+        start_time = _time_text(normalized_event.get("start_time"), time(9, 0))
+        end_time = _time_text(normalized_event.get("end_time"), time(10, 0))
+        if end_time <= start_time:
+            end_time = _add_minutes_to_time_text(start_time, 60)
+        normalized_event["start_time"] = start_time
+        normalized_event["end_time"] = end_time
+        normalized_events.append(normalized_event)
+    plan["fixed_events"] = normalized_events
+
+
 def _apply_day_plan_defaults(
     value: Any,
     *,
     reference_date: date | None,
+    raw_text: str = "",
 ) -> Any:
     if not isinstance(value, dict):
         return value
@@ -57,6 +133,18 @@ def _apply_day_plan_defaults(
     plan["day_start"] = _time_text(plan.get("day_start"), time(9, 0))
     plan["day_end"] = _time_text(plan.get("day_end"), time(23, 0))
     plan.setdefault("fixed_events", [])
+
+    recurring_events = _extract_weekday_recurring_fixed_events(
+        raw_text,
+        reference_date=reference_date or plan_date,
+    )
+    if recurring_events is not None:
+        week_start, fixed_events = recurring_events
+        plan_date = week_start
+        plan["date"] = week_start.isoformat()
+        plan["fixed_events"] = fixed_events
+
+    _normalize_fixed_events_defaults(plan)
 
     if not plan.get("availability_windows"):
         plan["availability_windows"] = [
@@ -210,6 +298,7 @@ def parse_natural_language_input(
                 _apply_day_plan_defaults(
                     response.get("day_plan", response),
                     reference_date=reference_date,
+                    raw_text=raw_text,
                 )
             )
         except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
