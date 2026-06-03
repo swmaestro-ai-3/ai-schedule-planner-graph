@@ -25,6 +25,7 @@ from planner.google_calendar import (
 from planner.graph import build_planner_graph
 from planner.llm_parser import LLMParserError, parse_natural_language_input
 from planner.models import (
+    AvailabilityWindow,
     DayPlanInput,
     FixedEvent,
     FocusType,
@@ -59,13 +60,28 @@ def default_fixed_event_rows() -> list[dict[str, Any]]:
     ]
 
 
-def default_task_rows() -> list[dict[str, Any]]:
+def default_availability_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": f"available-{day_offset}",
+            "day_offset": day_offset,
+            "start_time": time(9, 0),
+            "end_time": time(23, 0),
+        }
+        for day_offset in range(7)
+    ]
+
+
+def default_task_rows(base_date: date | None = None) -> list[dict[str, Any]]:
+    base_date = base_date or date(2026, 6, 3)
     return [
         {
             "id": "task-1",
             "title": "알고리즘 과제",
             "estimated_minutes": 120,
             "priority": 5,
+            "start_date": base_date,
+            "end_date": base_date + timedelta(days=6),
             "splittable": True,
             "focus_type": "deep",
         },
@@ -74,6 +90,8 @@ def default_task_rows() -> list[dict[str, Any]]:
             "title": "영어 단어 암기",
             "estimated_minutes": 30,
             "priority": 2,
+            "start_date": base_date,
+            "end_date": base_date + timedelta(days=6),
             "splittable": True,
             "focus_type": "light",
         },
@@ -89,7 +107,7 @@ def should_show_openai_oauth_button(status: OpenAIOAuthStatus) -> bool:
 
 
 def structured_input_section_titles() -> list[str]:
-    return ["계획 기준", "고정 일정", "배치할 작업"]
+    return ["계획 기준", "가용 시간", "고정 일정", "배치할 작업"]
 
 
 def structured_input_action_labels() -> list[str]:
@@ -98,8 +116,17 @@ def structured_input_action_labels() -> list[str]:
 
 def structured_input_editor_column_order() -> dict[str, tuple[str, ...]]:
     return {
+        "availability": ("day_offset", "start_time", "end_time"),
         "fixed_events": ("title", "start_time", "end_time", "category"),
-        "tasks": ("title", "estimated_minutes", "priority", "focus_type", "splittable"),
+        "tasks": (
+            "title",
+            "estimated_minutes",
+            "priority",
+            "start_date",
+            "end_date",
+            "focus_type",
+            "splittable",
+        ),
     }
 
 
@@ -109,9 +136,17 @@ def structured_input_summary_cards(
     day_start: time,
     day_end: time,
     buffer_ratio: float,
+    availability_rows: list[dict[str, Any]],
     fixed_event_rows: list[dict[str, Any]],
     task_rows: list[dict[str, Any]],
 ) -> list[dict[str, str]]:
+    availability_count = sum(
+        1
+        for row in availability_rows
+        if row.get("day_offset") is not None
+        or row.get("start_time")
+        or row.get("end_time")
+    )
     fixed_event_count = sum(1 for row in fixed_event_rows if row.get("title"))
     task_count = sum(1 for row in task_rows if row.get("title"))
     return [
@@ -120,6 +155,7 @@ def structured_input_summary_cards(
             "label": "운영 시간",
             "value": f"{day_start.strftime('%H:%M')}-{day_end.strftime('%H:%M')}",
         },
+        {"label": "가용", "value": f"{availability_count}개"},
         {"label": "여유", "value": f"{buffer_ratio * 100:.0f}%"},
         {"label": "입력", "value": f"고정 {fixed_event_count}개 / 작업 {task_count}개"},
     ]
@@ -140,12 +176,23 @@ def fixed_event_editor_column_labels() -> dict[str, str]:
     }
 
 
+def availability_editor_column_labels() -> dict[str, str]:
+    return {
+        "id": "ID",
+        "day_offset": "요일",
+        "start_time": "시작",
+        "end_time": "종료",
+    }
+
+
 def task_editor_column_labels() -> dict[str, str]:
     return {
         "id": "ID",
         "title": "작업명",
         "estimated_minutes": "소요(분)",
         "priority": "중요도",
+        "start_date": "시작 날짜",
+        "end_date": "종료 날짜",
         "splittable": "분할 가능",
         "focus_type": "집중도",
     }
@@ -159,6 +206,23 @@ def fixed_event_editor_column_config() -> dict[str, Any]:
         "start_time": st.column_config.TimeColumn(labels["start_time"], format="HH:mm"),
         "end_time": st.column_config.TimeColumn(labels["end_time"], format="HH:mm"),
         "category": st.column_config.TextColumn(labels["category"], width="small"),
+    }
+
+
+def availability_editor_column_config() -> dict[str, Any]:
+    labels = availability_editor_column_labels()
+    return {
+        "id": st.column_config.TextColumn(labels["id"], width="small"),
+        "day_offset": st.column_config.SelectboxColumn(
+            labels["day_offset"],
+            options=list(range(7)),
+            width="small",
+            format_func=lambda value: "요일 선택"
+            if value in (None, "")
+            else f"{int(value) + 1}일차",
+        ),
+        "start_time": st.column_config.TimeColumn(labels["start_time"], format="HH:mm"),
+        "end_time": st.column_config.TimeColumn(labels["end_time"], format="HH:mm"),
     }
 
 
@@ -180,6 +244,8 @@ def task_editor_column_config() -> dict[str, Any]:
             step=1,
             width="small",
         ),
+        "start_date": st.column_config.DateColumn(labels["start_date"], format="YYYY/MM/DD"),
+        "end_date": st.column_config.DateColumn(labels["end_date"], format="YYYY/MM/DD"),
         "splittable": st.column_config.CheckboxColumn(labels["splittable"], width="small"),
         "focus_type": st.column_config.SelectboxColumn(
             labels["focus_type"],
@@ -209,7 +275,18 @@ def build_structured_input(
     buffer_ratio: float,
     fixed_event_rows: list[dict[str, Any]],
     task_rows: list[dict[str, Any]],
+    availability_rows: list[dict[str, Any]] | None = None,
 ) -> DayPlanInput:
+    availability_windows = [
+        AvailabilityWindow(
+            id=str(row.get("id") or f"available-{index}"),
+            day_offset=int(row.get("day_offset") or 0),
+            start_time=row["start_time"],
+            end_time=row["end_time"],
+        )
+        for index, row in enumerate(availability_rows or [], start=1)
+        if row.get("start_time") and row.get("end_time")
+    ]
     fixed_events = [
         FixedEvent(
             id=str(row.get("id") or f"event-{index}"),
@@ -229,6 +306,8 @@ def build_structured_input(
             if row.get("estimated_minutes") not in (None, "")
             else None,
             priority=int(row.get("priority") or 3),
+            start_date=row.get("start_date") or None,
+            end_date=row.get("end_date") or None,
             splittable=bool(row.get("splittable", True)),
             focus_type=FocusType(row.get("focus_type") or FocusType.ANY),
         )
@@ -239,6 +318,7 @@ def build_structured_input(
         date=plan_date,
         day_start=day_start,
         day_end=day_end,
+        availability_windows=availability_windows,
         fixed_events=fixed_events,
         tasks=tasks,
         buffer_ratio=buffer_ratio,
@@ -891,6 +971,7 @@ def submit_structured_plan(
     day_start: time,
     day_end: time,
     buffer_ratio: float,
+    availability_rows: list[dict[str, Any]],
     fixed_event_rows: list[dict[str, Any]],
     task_rows: list[dict[str, Any]],
 ) -> None:
@@ -899,6 +980,7 @@ def submit_structured_plan(
         day_start=day_start,
         day_end=day_end,
         buffer_ratio=buffer_ratio,
+        availability_rows=list(availability_rows),
         fixed_event_rows=list(fixed_event_rows),
         task_rows=list(task_rows),
     )
@@ -1183,7 +1265,7 @@ def render_structured_section_header(title: str, copy: str) -> None:
 
 
 def render_structured_tab() -> None:
-    settings_title, fixed_title, task_title = structured_input_section_titles()
+    settings_title, availability_title, fixed_title, task_title = structured_input_section_titles()
     primary_action_label = structured_input_action_labels()[0]
     column_order = structured_input_editor_column_order()
 
@@ -1214,8 +1296,10 @@ def render_structured_tab() -> None:
 
     if "fixed_event_rows" not in st.session_state:
         st.session_state["fixed_event_rows"] = default_fixed_event_rows()
+    if "availability_rows" not in st.session_state:
+        st.session_state["availability_rows"] = default_availability_rows()
     if "task_rows" not in st.session_state:
-        st.session_state["task_rows"] = default_task_rows()
+        st.session_state["task_rows"] = default_task_rows(plan_date)
 
     render_structured_summary_cards(
         structured_input_summary_cards(
@@ -1223,6 +1307,7 @@ def render_structured_tab() -> None:
             day_start=day_start,
             day_end=day_end,
             buffer_ratio=buffer_ratio,
+            availability_rows=list(st.session_state["availability_rows"]),
             fixed_event_rows=list(st.session_state["fixed_event_rows"]),
             task_rows=list(st.session_state["task_rows"]),
         )
@@ -1243,9 +1328,25 @@ def render_structured_tab() -> None:
             day_start=day_start,
             day_end=day_end,
             buffer_ratio=buffer_ratio,
+            availability_rows=list(st.session_state["availability_rows"]),
             fixed_event_rows=list(st.session_state["fixed_event_rows"]),
             task_rows=list(st.session_state["task_rows"]),
         )
+
+    render_structured_section_header(
+        availability_title,
+        "AI가 작업을 배치할 수 있는 요일별 시간대를 입력합니다.",
+    )
+    availability_rows = st.data_editor(
+        st.session_state["availability_rows"],
+        column_config=availability_editor_column_config(),
+        column_order=column_order["availability"],
+        hide_index=True,
+        num_rows="dynamic",
+        width="stretch",
+        key="availability",
+    )
+    st.session_state["availability_rows"] = list(availability_rows)
 
     render_structured_section_header(
         fixed_title,

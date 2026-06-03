@@ -3,11 +3,13 @@ from __future__ import annotations
 from datetime import time
 
 from planner.models import (
+    AvailabilityWindow,
     BufferSummary,
     DayPlanInput,
     DraftPlan,
     FeasibilityStatus,
     FinalPlanOutput,
+    FreeBlock,
     NormalizedFixedEvent,
     NormalizedTask,
     ScheduleItem,
@@ -27,11 +29,15 @@ def offset_from_day_start(value: time, day_start: time) -> int:
 
 def normalize_fixed_events(plan_input: DayPlanInput) -> list[NormalizedFixedEvent]:
     normalized: list[NormalizedFixedEvent] = []
-    for event in sorted(plan_input.fixed_events, key=lambda item: item.start_time):
+    for event in sorted(
+        plan_input.fixed_events,
+        key=lambda item: (item.day_offset, item.start_time),
+    ):
         normalized.append(
             NormalizedFixedEvent(
                 id=event.id,
                 title=event.title.strip() or "제목 없는 일정",
+                day_offset=event.day_offset,
                 start_offset=offset_from_day_start(event.start_time, plan_input.day_start),
                 end_offset=offset_from_day_start(event.end_time, plan_input.day_start),
                 category=event.category,
@@ -42,8 +48,55 @@ def normalize_fixed_events(plan_input: DayPlanInput) -> list[NormalizedFixedEven
     return normalized
 
 
+def normalize_availability_windows(plan_input: DayPlanInput) -> list[FreeBlock]:
+    return [
+        FreeBlock(
+            id=window.id,
+            day_offset=window.day_offset,
+            start_offset=offset_from_day_start(window.start_time, plan_input.day_start),
+            end_offset=offset_from_day_start(window.end_time, plan_input.day_start),
+        )
+        for window in sorted(
+            plan_input.availability_windows,
+            key=lambda item: (item.day_offset, item.start_time),
+        )
+    ]
+
+
 def normalize_tasks(plan_input: DayPlanInput) -> list[NormalizedTask]:
     return [NormalizedTask(**task.model_dump()) for task in plan_input.tasks]
+
+
+def _validate_time_window(
+    *,
+    window: AvailabilityWindow,
+    day_start_minutes: int,
+    day_end_minutes: int,
+) -> list[ValidationIssue]:
+    start_minutes = time_to_minutes(window.start_time)
+    end_minutes = time_to_minutes(window.end_time)
+    issues: list[ValidationIssue] = []
+    if end_minutes <= start_minutes:
+        issues.append(
+            ValidationIssue(
+                code="INVALID_AVAILABILITY_RANGE",
+                message="가용 시간 종료는 시작보다 늦어야 합니다.",
+                blocking=True,
+                source_id=window.id,
+                source_type="availability",
+            )
+        )
+    if start_minutes < day_start_minutes or end_minutes > day_end_minutes:
+        issues.append(
+            ValidationIssue(
+                code="AVAILABILITY_OUT_OF_DAY",
+                message="가용 시간이 하루 계획 범위를 벗어났습니다.",
+                blocking=True,
+                source_id=window.id,
+                source_type="availability",
+            )
+        )
+    return issues
 
 
 def validate_day_plan_input(plan_input: DayPlanInput) -> list[ValidationIssue]:
@@ -57,6 +110,15 @@ def validate_day_plan_input(plan_input: DayPlanInput) -> list[ValidationIssue]:
                 code="INVALID_DAY_RANGE",
                 message="하루 종료 시간은 시작 시간보다 늦어야 합니다.",
                 blocking=True,
+            )
+        )
+
+    for window in plan_input.availability_windows:
+        issues.extend(
+            _validate_time_window(
+                window=window,
+                day_start_minutes=day_start_minutes,
+                day_end_minutes=day_end_minutes,
             )
         )
 
@@ -87,7 +149,10 @@ def validate_day_plan_input(plan_input: DayPlanInput) -> list[ValidationIssue]:
         event for event in normalized_events if event.end_offset > event.start_offset
     ]
     for previous, current in zip(valid_events, valid_events[1:]):
-        if current.start_offset < previous.end_offset:
+        if (
+            current.day_offset == previous.day_offset
+            and current.start_offset < previous.end_offset
+        ):
             issues.append(
                 ValidationIssue(
                     code="FIXED_EVENT_OVERLAP",
@@ -98,9 +163,9 @@ def validate_day_plan_input(plan_input: DayPlanInput) -> list[ValidationIssue]:
                 )
             )
 
-    seen_event_keys: set[tuple[int, int, str]] = set()
+    seen_event_keys: set[tuple[int, int, int, str]] = set()
     for event in normalized_events:
-        key = (event.start_offset, event.end_offset, event.title)
+        key = (event.day_offset, event.start_offset, event.end_offset, event.title)
         if key in seen_event_keys:
             issues.append(
                 ValidationIssue(
@@ -124,15 +189,31 @@ def validate_day_plan_input(plan_input: DayPlanInput) -> list[ValidationIssue]:
                     source_type="task",
                 )
             )
+        if task.start_date and task.end_date and task.end_date < task.start_date:
+            issues.append(
+                ValidationIssue(
+                    code="INVALID_TASK_DATE_RANGE",
+                    message=f"{task.title}의 종료 날짜가 시작 날짜보다 빠릅니다.",
+                    blocking=True,
+                    source_id=task.id,
+                    source_type="task",
+                )
+            )
 
     return issues
 
 
 def validate_schedule_overlaps(items: list[ScheduleItem]) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    sorted_items = sorted(items, key=lambda item: (item.start_offset, item.end_offset))
+    sorted_items = sorted(
+        items,
+        key=lambda item: (item.day_offset, item.start_offset, item.end_offset),
+    )
     for previous, current in zip(sorted_items, sorted_items[1:]):
-        if current.start_offset < previous.end_offset:
+        if (
+            current.day_offset == previous.day_offset
+            and current.start_offset < previous.end_offset
+        ):
             issues.append(
                 ValidationIssue(
                     code="SCHEDULE_OVERLAP",

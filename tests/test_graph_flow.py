@@ -3,7 +3,7 @@ from datetime import date, time
 from langgraph.checkpoint.memory import InMemorySaver
 
 from planner.graph import build_planner_graph
-from planner.models import DayPlanInput, FixedEvent, FocusType, Task
+from planner.models import AvailabilityWindow, DayPlanInput, FixedEvent, FocusType, Task
 
 
 def make_valid_input():
@@ -51,6 +51,52 @@ def test_valid_structured_input_reaches_draft_plan():
 
     assert result["draft_plan"].schedule_items
     assert "final_plan" not in result
+
+
+def test_graph_places_task_inside_availability_and_task_date_range():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        availability_windows=[
+            AvailabilityWindow(
+                id="available-0",
+                day_offset=0,
+                start_time=time(9, 0),
+                end_time=time(12, 0),
+            ),
+            AvailabilityWindow(
+                id="available-1",
+                day_offset=1,
+                start_time=time(13, 0),
+                end_time=time(16, 0),
+            ),
+        ],
+        fixed_events=[],
+        tasks=[
+            Task(
+                id="task-1",
+                title="알고리즘 과제",
+                estimated_minutes=120,
+                priority=5,
+                start_date=date(2026, 6, 4),
+                end_date=date(2026, 6, 4),
+                splittable=False,
+            )
+        ],
+        buffer_ratio=0.0,
+    )
+
+    result = invoke_graph({"parsed_input": plan_input, "approval_status": "pending"})
+
+    task_items = [
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "task-1"
+    ]
+    assert len(task_items) == 1
+    assert task_items[0].day_offset == 1
+    assert task_items[0].start_offset == 240
 
 
 def test_overlapping_fixed_events_end_as_invalid_input():

@@ -1,6 +1,12 @@
 from datetime import date, time
 
-from planner.models import DayPlanInput, FixedEvent, Task, UnassignedReasonCode
+from planner.models import (
+    AvailabilityWindow,
+    DayPlanInput,
+    FixedEvent,
+    Task,
+    UnassignedReasonCode,
+)
 from planner.validators import (
     normalize_fixed_events,
     normalize_tasks,
@@ -8,11 +14,12 @@ from planner.validators import (
 )
 
 
-def make_input(*, fixed_events=None, tasks=None):
+def make_input(*, fixed_events=None, tasks=None, availability_windows=None):
     return DayPlanInput(
         date=date(2026, 6, 3),
         day_start=time(9, 0),
         day_end=time(23, 0),
+        availability_windows=availability_windows or [],
         fixed_events=fixed_events or [],
         tasks=tasks or [],
     )
@@ -94,6 +101,42 @@ def test_task_without_duration_is_marked_missing_duration():
     assert normalized[0].estimated_minutes is None
     issues = validate_day_plan_input(plan_input)
     assert any(issue.code == UnassignedReasonCode.MISSING_DURATION.value for issue in issues)
+
+
+def test_task_end_date_before_start_date_is_blocking():
+    plan_input = make_input(
+        tasks=[
+            Task(
+                id="task-1",
+                title="알고리즘 과제",
+                estimated_minutes=120,
+                start_date=date(2026, 6, 5),
+                end_date=date(2026, 6, 4),
+                splittable=True,
+            )
+        ]
+    )
+
+    issues = validate_day_plan_input(plan_input)
+
+    assert any(issue.code == "INVALID_TASK_DATE_RANGE" and issue.blocking for issue in issues)
+
+
+def test_availability_window_outside_day_range_is_blocking():
+    plan_input = make_input(
+        availability_windows=[
+            AvailabilityWindow(
+                id="late",
+                day_offset=0,
+                start_time=time(8, 0),
+                end_time=time(10, 0),
+            )
+        ]
+    )
+
+    issues = validate_day_plan_input(plan_input)
+
+    assert any(issue.code == "AVAILABILITY_OUT_OF_DAY" and issue.blocking for issue in issues)
 
 
 def test_blank_fixed_event_title_gets_display_fallback():

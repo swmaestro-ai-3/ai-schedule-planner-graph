@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app import (
+    availability_editor_column_labels,
     build_google_oauth_config,
     build_snooze_feedback_text,
     build_structured_input,
@@ -45,6 +46,14 @@ def test_structured_input_adapter_builds_day_plan_input():
         day_start=time(9, 0),
         day_end=time(23, 0),
         buffer_ratio=0.1,
+        availability_rows=[
+            {
+                "id": "available-1",
+                "day_offset": 1,
+                "start_time": time(13, 0),
+                "end_time": time(16, 0),
+            }
+        ],
         fixed_event_rows=[
             {
                 "id": "class-1",
@@ -60,6 +69,8 @@ def test_structured_input_adapter_builds_day_plan_input():
                 "title": "알고리즘 과제",
                 "estimated_minutes": 120,
                 "priority": 5,
+                "start_date": date(2026, 6, 4),
+                "end_date": date(2026, 6, 6),
                 "splittable": True,
                 "focus_type": "deep",
             }
@@ -67,12 +78,16 @@ def test_structured_input_adapter_builds_day_plan_input():
     )
 
     assert plan_input.fixed_events[0].title == "전공 수업"
+    assert plan_input.availability_windows[0].day_offset == 1
     assert plan_input.tasks[0].focus_type == "deep"
+    assert plan_input.tasks[0].start_date == date(2026, 6, 4)
+    assert plan_input.tasks[0].end_date == date(2026, 6, 6)
 
 
 def test_structured_input_sections_are_user_facing():
     assert structured_input_section_titles() == [
         "계획 기준",
+        "가용 시간",
         "고정 일정",
         "배치할 작업",
     ]
@@ -95,15 +110,32 @@ def test_structured_editor_columns_use_user_facing_labels():
         "title": "작업명",
         "estimated_minutes": "소요(분)",
         "priority": "중요도",
+        "start_date": "시작 날짜",
+        "end_date": "종료 날짜",
         "splittable": "분할 가능",
         "focus_type": "집중도",
+    }
+    assert availability_editor_column_labels() == {
+        "id": "ID",
+        "day_offset": "요일",
+        "start_time": "시작",
+        "end_time": "종료",
     }
 
 
 def test_structured_input_hides_technical_id_columns():
     assert structured_input_editor_column_order() == {
+        "availability": ("day_offset", "start_time", "end_time"),
         "fixed_events": ("title", "start_time", "end_time", "category"),
-        "tasks": ("title", "estimated_minutes", "priority", "focus_type", "splittable"),
+        "tasks": (
+            "title",
+            "estimated_minutes",
+            "priority",
+            "start_date",
+            "end_date",
+            "focus_type",
+            "splittable",
+        ),
     }
 
 
@@ -113,6 +145,7 @@ def test_structured_input_summary_cards_are_scan_friendly():
         day_start=time(9, 0),
         day_end=time(23, 0),
         buffer_ratio=0.1,
+        availability_rows=[{"day_offset": 0}, {"day_offset": 2}],
         fixed_event_rows=[{"title": "전공 수업"}],
         task_rows=[{"title": "알고리즘 과제"}, {"title": "영어 단어 암기"}],
     )
@@ -120,6 +153,7 @@ def test_structured_input_summary_cards_are_scan_friendly():
     assert cards == [
         {"label": "날짜", "value": "2026/06/03"},
         {"label": "운영 시간", "value": "09:00-23:00"},
+        {"label": "가용", "value": "2개"},
         {"label": "여유", "value": "10%"},
         {"label": "입력", "value": "고정 1개 / 작업 2개"},
     ]

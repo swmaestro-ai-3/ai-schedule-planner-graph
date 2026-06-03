@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from datetime import date, datetime, timedelta
 
 from planner.models import (
     BlockType,
@@ -21,38 +22,62 @@ def compute_free_blocks(
     day_start_offset: int,
     day_end_offset: int,
     normalized_events: list[NormalizedFixedEvent],
+    availability_blocks: list[FreeBlock] | None = None,
 ) -> list[FreeBlock]:
     blocks: list[FreeBlock] = []
-    cursor = day_start_offset
-    sorted_events = sorted(normalized_events, key=lambda event: event.start_offset)
+    availability_blocks = availability_blocks or [
+        FreeBlock(
+            id="free-window-1",
+            day_offset=0,
+            start_offset=day_start_offset,
+            end_offset=day_end_offset,
+        )
+    ]
+    sorted_windows = sorted(
+        availability_blocks,
+        key=lambda block: (block.day_offset, block.start_offset),
+    )
+    sorted_events = sorted(
+        normalized_events,
+        key=lambda event: (event.day_offset, event.start_offset),
+    )
 
-    for event in sorted_events:
-        reserved_start = max(
-            day_start_offset,
-            event.start_offset - event.buffer_before_minutes,
+    for window in sorted_windows:
+        cursor = window.start_offset
+        events_for_day = (
+            event for event in sorted_events if event.day_offset == window.day_offset
         )
-        reserved_end = min(
-            day_end_offset,
-            event.end_offset + event.buffer_after_minutes,
-        )
-        if reserved_start > cursor:
+        for event in events_for_day:
+            reserved_start = max(
+                window.start_offset,
+                event.start_offset - event.buffer_before_minutes,
+            )
+            reserved_end = min(
+                window.end_offset,
+                event.end_offset + event.buffer_after_minutes,
+            )
+            if reserved_end <= cursor or reserved_start >= window.end_offset:
+                continue
+            if reserved_start > cursor:
+                blocks.append(
+                    FreeBlock(
+                        id=f"free-{len(blocks) + 1}",
+                        day_offset=window.day_offset,
+                        start_offset=cursor,
+                        end_offset=reserved_start,
+                    )
+                )
+            cursor = max(cursor, reserved_end)
+
+        if cursor < window.end_offset:
             blocks.append(
                 FreeBlock(
                     id=f"free-{len(blocks) + 1}",
+                    day_offset=window.day_offset,
                     start_offset=cursor,
-                    end_offset=reserved_start,
+                    end_offset=window.end_offset,
                 )
             )
-        cursor = max(cursor, reserved_end)
-
-    if cursor < day_end_offset:
-        blocks.append(
-            FreeBlock(
-                id=f"free-{len(blocks) + 1}",
-                start_offset=cursor,
-                end_offset=day_end_offset,
-            )
-        )
 
     return blocks
 
@@ -104,6 +129,15 @@ def _remaining_free_minutes(blocks: list[FreeBlock]) -> int:
     return sum(block.duration_minutes for block in blocks)
 
 
+def _task_minutes_by_day(draft_plan: DraftPlan) -> dict[int, int]:
+    totals: dict[int, int] = {}
+    for item in draft_plan.schedule_items:
+        if item.type != ScheduleItemType.TASK:
+            continue
+        totals[item.day_offset] = totals.get(item.day_offset, 0) + item.duration_minutes
+    return totals
+
+
 def _task_sort_key(task: Task, plan_input: DayPlanInput) -> tuple[int, int, int]:
     deadline_score = 0
     if task.deadline is not None:
@@ -113,6 +147,32 @@ def _task_sort_key(task: Task, plan_input: DayPlanInput) -> tuple[int, int, int]
         days_until = (deadline_date - plan_input.date).days
         deadline_score = 100 - max(0, days_until)
     return (1 if task.hard_deadline else 0, task.priority, deadline_score)
+
+
+def _as_date(value: date | datetime | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    return value
+
+
+def _task_day_bounds(task: Task, plan_input: DayPlanInput) -> tuple[int, int]:
+    start_date = task.start_date or plan_input.date
+    end_date = task.end_date or _as_date(task.deadline) or plan_input.date + timedelta(days=6)
+    return (
+        max(0, (start_date - plan_input.date).days),
+        min(6, (end_date - plan_input.date).days),
+    )
+
+
+def _block_matches_task_date_range(
+    block: FreeBlock,
+    task: Task,
+    plan_input: DayPlanInput,
+) -> bool:
+    start_day, end_day = _task_day_bounds(task, plan_input)
+    return start_day <= block.day_offset <= end_day
 
 
 def _append_unassigned(
@@ -143,12 +203,14 @@ def _make_task_item(
     end_offset: int,
     block_type: BlockType | None,
     title: str | None = None,
+    day_offset: int = 0,
 ) -> ScheduleItem:
     return ScheduleItem(
         type=ScheduleItemType.TASK,
         title=title or task.title,
         start_offset=start_offset,
         end_offset=end_offset,
+        day_offset=day_offset,
         source_id=task.id,
         block_type=block_type,
         reason=_placement_reason(task, block_type),
@@ -193,6 +255,7 @@ def _consume_block(block: FreeBlock, minutes: int) -> tuple[FreeBlock | None, in
     return (
         FreeBlock(
             id=block.id,
+            day_offset=block.day_offset,
             start_offset=end,
             end_offset=block.end_offset,
             block_type=block_type,
@@ -206,6 +269,7 @@ def _find_best_block(
     task: Task,
     blocks: list[FreeBlock],
     plan_input: DayPlanInput,
+    day_task_minutes: dict[int, int],
 ) -> FreeBlock | None:
     candidates = [
         block
@@ -213,12 +277,18 @@ def _find_best_block(
         if block.block_type != BlockType.BUFFER
         and task.estimated_minutes is not None
         and block.duration_minutes >= task.estimated_minutes
+        and _block_matches_task_date_range(block, task, plan_input)
     ]
     if not candidates:
         return None
     return max(
         candidates,
-        key=lambda block: calculate_task_score(task, block, plan_input.date),
+        key=lambda block: (
+            -day_task_minutes.get(block.day_offset, 0),
+            calculate_task_score(task, block, plan_input.date),
+            -block.day_offset,
+            -block.start_offset,
+        ),
     )
 
 
@@ -237,6 +307,7 @@ def _add_remaining_blocks_as_buffers(
                 title="Buffer" if block.block_type == BlockType.BUFFER else "Free",
                 start_offset=block.start_offset,
                 end_offset=block.end_offset,
+                day_offset=block.day_offset,
                 block_type=block.block_type,
                 reason="계획 여유 시간입니다.",
             )
@@ -308,7 +379,7 @@ def _place_non_splittable_task(
     blocks: list[FreeBlock],
     plan_input: DayPlanInput,
 ) -> None:
-    block = _find_best_block(task, blocks, plan_input)
+    block = _find_best_block(task, blocks, plan_input, _task_minutes_by_day(draft_plan))
     if block is None:
         _append_unassigned(draft_plan, task, UnassignedReasonCode.NO_AVAILABLE_BLOCK)
         return
@@ -325,7 +396,13 @@ def _place_non_splittable_task(
     else:
         blocks[index] = new_block
     draft_plan.schedule_items.append(
-        _make_task_item(task, start, end, block.block_type)
+        _make_task_item(
+            task,
+            start,
+            end,
+            block.block_type,
+            day_offset=block.day_offset,
+        )
     )
 
 
@@ -337,15 +414,21 @@ def _place_splittable_task(
 ) -> None:
     assert task.estimated_minutes is not None
     remaining_minutes = task.estimated_minutes
-    planned_chunks: list[tuple[int, int, BlockType | None]] = []
+    planned_chunks: list[tuple[int, int, int, BlockType | None]] = []
     local_blocks = [block.model_copy() for block in blocks]
 
     while remaining_minutes > 0:
+        day_task_minutes = _task_minutes_by_day(draft_plan)
+        for day_offset, start, end, _block_type in planned_chunks:
+            day_task_minutes[day_offset] = (
+                day_task_minutes.get(day_offset, 0) + end - start
+            )
         usable_blocks = [
             block
             for block in local_blocks
             if block.block_type != BlockType.BUFFER
             and block.duration_minutes >= min(task.min_chunk_minutes, remaining_minutes)
+            and _block_matches_task_date_range(block, task, plan_input)
         ]
         if not usable_blocks:
             reason = (
@@ -358,7 +441,12 @@ def _place_splittable_task(
 
         block = max(
             usable_blocks,
-            key=lambda candidate: calculate_task_score(task, candidate, plan_input.date),
+            key=lambda candidate: (
+                -day_task_minutes.get(candidate.day_offset, 0),
+                calculate_task_score(task, candidate, plan_input.date),
+                -candidate.day_offset,
+                -candidate.start_offset,
+            ),
         )
         chunk_minutes = min(block.duration_minutes, remaining_minutes)
         index = local_blocks.index(block)
@@ -367,7 +455,7 @@ def _place_splittable_task(
             local_blocks.pop(index)
         else:
             local_blocks[index] = new_block
-        planned_chunks.append((start, end, block.block_type))
+        planned_chunks.append((block.day_offset, start, end, block.block_type))
         remaining_minutes -= chunk_minutes
 
     if _remaining_free_minutes(local_blocks) < draft_plan.target_buffer_minutes:
@@ -376,8 +464,15 @@ def _place_splittable_task(
 
     blocks[:] = local_blocks
     chunk_count = len(planned_chunks)
-    for index, (start, end, block_type) in enumerate(planned_chunks, start=1):
+    for index, (day_offset, start, end, block_type) in enumerate(planned_chunks, start=1):
         title = task.title if chunk_count == 1 else f"{task.title} ({index}/{chunk_count})"
         draft_plan.schedule_items.append(
-            _make_task_item(task, start, end, block_type, title=title)
+            _make_task_item(
+                task,
+                start,
+                end,
+                block_type,
+                title=title,
+                day_offset=day_offset,
+            )
         )
