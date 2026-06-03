@@ -2,11 +2,12 @@ import { ChevronRight, Link, SlidersHorizontal } from "lucide-react";
 
 interface SetupViewProps {
   aiConnected: boolean;
+  aiConnecting: boolean;
   onConnect: () => void;
   onNext: () => void;
 }
 
-export function SetupView({ aiConnected, onConnect, onNext }: SetupViewProps) {
+export function SetupView({ aiConnected, aiConnecting, onConnect, onNext }: SetupViewProps) {
   return (
     <main className="view setup-view">
       <section className="view-heading centered">
@@ -29,9 +30,14 @@ export function SetupView({ aiConnected, onConnect, onNext }: SetupViewProps) {
           <h3>OpenAI 계정</h3>
           <p>연결되면 자연어 일정 해석과 재배치 품질이 좋아집니다.</p>
           {!aiConnected && (
-            <button className="button dark full" type="button" onClick={onConnect}>
+            <button
+              className="button dark full"
+              type="button"
+              onClick={onConnect}
+              disabled={aiConnecting}
+            >
               <Link size={16} />
-              OpenAI 연결
+              {aiConnecting ? "연결 확인 중" : "OpenAI 연결"}
             </button>
           )}
         </article>

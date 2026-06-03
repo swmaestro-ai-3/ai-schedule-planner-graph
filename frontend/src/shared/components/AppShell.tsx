@@ -6,15 +6,23 @@ import type { PlannerStepId } from "../../features/planner/types/planner";
 interface AppShellProps {
   activeStep: PlannerStepId;
   aiConnected: boolean;
+  aiConnecting: boolean;
   onConnectAi: () => void;
   children: ReactNode;
 }
 
-export function aiStatusButtonLabel(aiConnected: boolean) {
+export function aiStatusButtonLabel(aiConnected: boolean, aiConnecting = false) {
+  if (aiConnecting) return "AI 연결 확인 중";
   return aiConnected ? "AI 연결됨" : "AI 미연결, 클릭해서 연결";
 }
 
-export function AppShell({ activeStep, aiConnected, onConnectAi, children }: AppShellProps) {
+export function AppShell({
+  activeStep,
+  aiConnected,
+  aiConnecting,
+  onConnectAi,
+  children,
+}: AppShellProps) {
   const activeIndex = plannerSteps.find((step) => step.id === activeStep)?.index ?? 1;
 
   return (
@@ -51,12 +59,12 @@ export function AppShell({ activeStep, aiConnected, onConnectAi, children }: App
           <button
             className={`status-pill ${aiConnected ? "connected" : ""}`}
             type="button"
-            aria-label={aiStatusButtonLabel(aiConnected)}
-            disabled={aiConnected}
+            aria-label={aiStatusButtonLabel(aiConnected, aiConnecting)}
+            disabled={aiConnected || aiConnecting}
             onClick={onConnectAi}
           >
             <span />
-            AI {aiConnected ? "연결됨" : "미연결"}
+            AI {aiConnecting ? "확인 중" : aiConnected ? "연결됨" : "미연결"}
           </button>
           <button className="ghost-icon-button" type="button" aria-label="로그">
             <Terminal size={16} />

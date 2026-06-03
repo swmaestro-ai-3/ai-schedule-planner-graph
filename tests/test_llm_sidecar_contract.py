@@ -53,7 +53,7 @@ def test_sidecar_builds_streaming_responses_request_with_input_list():
     )
 
     request = json.loads(stdout)
-    assert request["model"] == "gpt-5.4"
+    assert request["model"] == "gpt-5.1"
     assert request["stream"] is True
     assert request["input"][0]["role"] == "user"
     assert request["input"][0]["content"][0]["type"] == "input_text"

@@ -58,7 +58,7 @@ Default local values:
 
 ```bash
 OPENAI_OAUTH_STORAGE_DIR=.openai-oauth
-OPENAI_OAUTH_MODEL=gpt-5
+OPENAI_OAUTH_MODEL=gpt-5.1
 OPENAI_OAUTH_BASE_URL=http://127.0.0.1:10531/v1
 ```
 

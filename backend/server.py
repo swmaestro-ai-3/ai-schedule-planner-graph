@@ -5,7 +5,13 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from backend.api import create_plan_response, replan_response
+from backend.api import (
+    OAuthRequiredError,
+    create_plan_response,
+    openai_connect_response,
+    openai_status_response,
+    replan_response,
+)
 
 
 class PlannerRequestHandler(BaseHTTPRequestHandler):
@@ -36,6 +42,9 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send_json(200, {"ok": True})
             return
+        if self.path == "/api/openai/status":
+            self._send_json(200, openai_status_response())
+            return
         self._send_json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
@@ -47,7 +56,12 @@ class PlannerRequestHandler(BaseHTTPRequestHandler):
             if self.path == "/api/replans":
                 self._send_json(200, replan_response(request))
                 return
+            if self.path == "/api/openai/connect":
+                self._send_json(200, openai_connect_response())
+                return
             self._send_json(404, {"error": "not found"})
+        except OAuthRequiredError as exc:
+            self._send_json(401, {"error": str(exc), "code": "openai_oauth_required"})
         except Exception as exc:
             self._send_json(400, {"error": str(exc)})
 

@@ -1,6 +1,6 @@
-import { Bot, LoaderCircle, Send, X } from "lucide-react";
+import { Bot, Check, LoaderCircle, Send, X } from "lucide-react";
 import { useState } from "react";
-import type { CreatePlanInput, PlannerDraft, ReplanInput } from "../types/planner";
+import type { CreatePlanInput, PlannerDraft, ReplanInput, ScheduleItem } from "../types/planner";
 
 interface AgentChatProps {
   open: boolean;
@@ -8,8 +8,14 @@ interface AgentChatProps {
   hasDraft: boolean;
   draft: PlannerDraft | null;
   onOpenChange: (open: boolean) => void;
-  onCreatePlan: (input: CreatePlanInput) => Promise<boolean>;
-  onReplan: (input: ReplanInput) => Promise<boolean>;
+  onCreateProposal: (input: CreatePlanInput) => Promise<AgentProposalResult>;
+  onReplanProposal: (baseDraft: PlannerDraft, input: ReplanInput) => Promise<AgentProposalResult>;
+  onCommitDraft: (draft: PlannerDraft) => void;
+}
+
+export interface AgentProposalResult {
+  draft: PlannerDraft | null;
+  error?: string;
 }
 
 interface ChatMessage {
@@ -18,17 +24,40 @@ interface ChatMessage {
 }
 
 const createBusyCopy = {
-  title: "일정안을 만드는 중",
-  detail: "요청을 구조화하고 가용 시간에 맞춰 캘린더 블록을 배치하고 있습니다.",
+  title: "일정안을 쓰는 중",
+  detail: "요청을 구조화하고 초안으로 보여줄 캘린더 배치를 준비하고 있습니다.",
 };
 
 const replanBusyCopy = {
-  title: "요청을 반영하는 중",
-  detail: "기존 일정과 피드백을 비교해서 주간 캘린더를 다시 배치하고 있습니다.",
+  title: "수정안을 쓰는 중",
+  detail: "현재 제안과 피드백을 비교해서 반영 전 수정안을 준비하고 있습니다.",
 };
+
+const MIN_TYPING_MS = 650;
 
 export function agentBusyCopy(hasDraft: boolean) {
   return hasDraft ? replanBusyCopy : createBusyCopy;
+}
+
+export function agentProposalSummary(draft: PlannerDraft) {
+  const fixedCount = draft.items.filter((item) => item.type === "fixed").length;
+  const taskCount = draft.items.filter((item) => item.type === "task").length;
+  return `고정 일정 ${fixedCount}개, 작업 ${taskCount}개를 배치한 초안입니다.`;
+}
+
+export function agentPreviewItems(draft: PlannerDraft, limit = 3) {
+  return draft.items.slice(0, limit).map((item) => formatPreviewItem(item));
+}
+
+function formatPreviewItem(item: ScheduleItem) {
+  const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
+  return `${dayLabels[item.dayIndex] ?? "일정"} ${item.start}-${item.end} ${item.title}`;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 export function AgentChat({
@@ -37,61 +66,98 @@ export function AgentChat({
   hasDraft,
   draft,
   onOpenChange,
-  onCreatePlan,
-  onReplan,
+  onCreateProposal,
+  onReplanProposal,
+  onCommitDraft,
 }: AgentChatProps) {
   const [text, setText] = useState("");
+  const [typing, setTyping] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<PlannerDraft | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "agent",
-      text: "일정 생성이나 수정 요청을 입력하세요.",
+      text: "원하는 일정을 말해 주세요. 먼저 초안으로 보여드리고, 확인 후 캘린더에 반영합니다.",
     },
   ]);
 
+  const workingDraft = pendingDraft ?? draft;
+  const hasWorkingDraft = Boolean(workingDraft);
+  const isWorking = busy || typing;
+  const taskCount = workingDraft?.items.filter((item) => item.type === "task").length ?? 0;
+  const busyCopy = agentBusyCopy(hasWorkingDraft);
+
   const submit = async () => {
     const value = text.trim();
-    if (!value || busy) return;
+    if (!value || isWorking) return;
+
     setMessages((current) => [...current, { role: "user", text: value }]);
     setText("");
+    setTyping(true);
 
-    if (hasDraft) {
-      const ok = await onReplan({ reason: value, snoozeDays: 1 });
+    const startedAt = Date.now();
+    const baseDraft = pendingDraft ?? draft;
+    const result = baseDraft
+      ? await onReplanProposal(baseDraft, { reason: value, snoozeDays: 1 })
+      : await onCreateProposal({ mode: "natural", text: value, bufferRatio: 15 });
+
+    const remainingDelay = Math.max(0, MIN_TYPING_MS - (Date.now() - startedAt));
+    if (remainingDelay > 0) {
+      await wait(remainingDelay);
+    }
+
+    setTyping(false);
+
+    if (!result.draft) {
       setMessages((current) => [
         ...current,
         {
           role: "agent",
-          text: ok
-            ? "요청을 반영해 다시 배치했습니다."
-            : "요청을 처리하지 못했습니다. 입력을 조금 바꿔 다시 보내주세요.",
+          text:
+            result.error ||
+            "초안을 만들지 못했습니다. 원하는 요일, 시간, 작업명을 조금 더 구체적으로 알려주세요.",
         },
       ]);
       return;
     }
 
-    const ok = await onCreatePlan({ mode: "natural", text: value, bufferRatio: 15 });
+    setPendingDraft(result.draft);
     setMessages((current) => [
       ...current,
-        {
-          role: "agent",
-          text: ok
-            ? "일정안을 만들었습니다."
-            : "일정안을 만들지 못했습니다. 요청을 조금 더 구체적으로 입력해주세요.",
+      {
+        role: "agent",
+        text: "초안을 준비했습니다. 아직 캘린더에는 반영하지 않았습니다. 확인 후 확정해 주세요.",
       },
     ]);
   };
 
-  const taskCount = draft?.items.filter((item) => item.type === "task").length ?? 0;
-  const busyCopy = agentBusyCopy(hasDraft);
+  const commitPendingDraft = () => {
+    if (!pendingDraft) return;
+    onCommitDraft(pendingDraft);
+    setPendingDraft(null);
+    setMessages((current) => [
+      ...current,
+      {
+        role: "agent",
+        text: "확정했습니다. 이제 캘린더에 반영했습니다.",
+      },
+    ]);
+  };
 
   return (
-    <div className={`agent-chat ${busy ? "is-busy" : ""}`}>
+    <div className={`agent-chat ${isWorking ? "is-busy" : ""}`}>
       {open && (
-        <section className="agent-panel" aria-label="AI 일정 에이전트" aria-busy={busy}>
+        <section className="agent-panel" aria-label="AI 일정 에이전트" aria-busy={isWorking}>
           <header>
             <div>
               <strong>AI 일정 에이전트</strong>
               <span>
-                {busy ? busyCopy.title : hasDraft ? `${taskCount}개 작업 수정 가능` : "새 일정 생성"}
+                {isWorking
+                  ? busyCopy.title
+                  : pendingDraft
+                    ? "확정 대기 중"
+                    : hasDraft
+                      ? `${taskCount}개 작업 조율 가능`
+                      : "새 일정 조율"}
               </span>
             </div>
             <button type="button" aria-label="닫기" onClick={() => onOpenChange(false)}>
@@ -104,21 +170,46 @@ export function AgentChat({
                 {message.text}
               </div>
             ))}
-            {busy && (
-              <div className="agent-message agent agent-working">
-                <span className="agent-working-row">
-                  <span className="agent-spinner">
-                    <LoaderCircle size={15} />
-                  </span>
-                  {busyCopy.title}
-                </span>
-                <span>{busyCopy.detail}</span>
-                <span className="agent-progress" aria-hidden="true">
+            {isWorking && (
+              <div className="agent-message agent agent-typing" aria-label="AI가 응답을 작성 중">
+                <span className="typing-dots" aria-hidden="true">
+                  <span />
+                  <span />
                   <span />
                 </span>
+                <span>{busyCopy.title}</span>
               </div>
             )}
           </div>
+
+          {pendingDraft && (
+            <article className="agent-proposal" aria-label="반영 전 일정 초안">
+              <div>
+                <span>반영 전 초안</span>
+                <strong>{agentProposalSummary(pendingDraft)}</strong>
+              </div>
+              <ul>
+                {agentPreviewItems(pendingDraft).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              <div className="agent-proposal-actions">
+                <button className="button primary" type="button" onClick={commitPendingDraft} disabled={isWorking}>
+                  <Check size={16} />
+                  캘린더에 반영
+                </button>
+                <button
+                  className="button ghost"
+                  type="button"
+                  onClick={() => setText("이 초안에서 ")}
+                  disabled={isWorking}
+                >
+                  더 조율하기
+                </button>
+              </div>
+            </article>
+          )}
+
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -128,19 +219,23 @@ export function AgentChat({
             <textarea
               value={text}
               onChange={(event) => setText(event.target.value)}
-              placeholder={hasDraft ? "예: 기획서 작성 내일로 미뤄줘" : "예: 매일 23시에 회고 1시간 넣어줘"}
+              placeholder={
+                hasWorkingDraft
+                  ? "예: 이 초안에서 기획서 작성은 내일로 미뤄줘"
+                  : "예: 매일 23시에 회고 1시간 넣어줘"
+              }
               rows={3}
-              disabled={busy}
+              disabled={isWorking}
             />
-            <button className="button primary" type="submit" disabled={busy || !text.trim()}>
-              {busy ? (
+            <button className="button primary" type="submit" disabled={isWorking || !text.trim()}>
+              {isWorking ? (
                 <span className="agent-spinner">
                   <LoaderCircle size={16} />
                 </span>
               ) : (
                 <Send size={16} />
               )}
-              {busy ? "작업 중" : "보내기"}
+              {isWorking ? "작성 중" : pendingDraft ? "수정 요청" : "보내기"}
             </button>
           </form>
         </section>
@@ -151,7 +246,7 @@ export function AgentChat({
         aria-label="AI 일정 에이전트 열기"
         onClick={() => onOpenChange(!open)}
       >
-        {busy ? (
+        {isWorking ? (
           <span className="agent-spinner">
             <LoaderCircle size={24} />
           </span>

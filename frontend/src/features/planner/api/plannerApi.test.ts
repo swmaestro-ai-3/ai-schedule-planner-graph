@@ -67,4 +67,53 @@ describe("http planner api", () => {
       },
     });
   });
+
+  it("gets OpenAI OAuth status from the backend", async () => {
+    const calls: Array<{ url: string; method: string }> = [];
+    const api = createHttpPlannerApi({
+      baseUrl: "http://planner.test",
+      fetcher: async (url, init) => {
+        calls.push({ url: String(url), method: init?.method ?? "GET" });
+        return new Response(
+          JSON.stringify({
+            connected: true,
+            message: "openai-oauth proxy is reachable.",
+            models: ["gpt-5.1"],
+            authFileExists: true,
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const status = await api.getOpenAIStatus();
+
+    expect(status.connected).toBe(true);
+    expect(status.models).toEqual(["gpt-5.1"]);
+    expect(calls).toEqual([{ url: "http://planner.test/api/openai/status", method: "GET" }]);
+  });
+
+  it("posts to the OpenAI OAuth connect endpoint", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const api = createHttpPlannerApi({
+      baseUrl: "http://planner.test",
+      fetcher: async (url, init) => {
+        calls.push({ url: String(url), body: JSON.parse(String(init?.body)) });
+        return new Response(
+          JSON.stringify({
+            connected: false,
+            action: "login_started",
+            message: "OpenAI OAuth 로그인 페이지를 열었습니다. 로그인 후 다시 연결을 확인하세요.",
+            pid: 1234,
+          }),
+          { status: 200 },
+        );
+      },
+    });
+
+    const result = await api.connectOpenAI();
+
+    expect(result.action).toBe("login_started");
+    expect(calls).toEqual([{ url: "http://planner.test/api/openai/connect", body: {} }]);
+  });
 });

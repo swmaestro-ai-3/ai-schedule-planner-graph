@@ -41,7 +41,7 @@ function formatPrompt(payload) {
 
 export function buildResponseRequest(
   payload,
-  model = process.env.OPENAI_OAUTH_MODEL ?? "gpt-5.4",
+  model = process.env.OPENAI_OAUTH_MODEL ?? "gpt-5.1",
 ) {
   return {
     model,

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 from datetime import date, time, timedelta
+from pathlib import Path
 from typing import Any
 
 from planner.graph import build_planner_graph
-from planner.llm_parser import SidecarCallable, parse_natural_language_input
+from planner.llm_parser import SidecarCallable, call_llm_sidecar, parse_natural_language_input
 from planner.models import (
     AvailabilityWindow,
     DayPlanInput,
@@ -15,7 +16,12 @@ from planner.models import (
     ScheduleItemType,
     Task,
 )
-from planner.openai_oauth import check_openai_oauth_proxy
+from planner.openai_oauth import (
+    check_openai_oauth_proxy,
+    find_existing_auth_file,
+    start_codex_login,
+    start_openai_oauth_proxy,
+)
 
 
 WEEKDAY_OFFSETS = {
@@ -27,6 +33,66 @@ WEEKDAY_OFFSETS = {
     "토": 5,
     "일": 6,
 }
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+OAUTH_REQUIRED_MESSAGE = (
+    "OpenAI OAuth 로그인이 필요합니다. 화면 상단의 AI 미연결 버튼이나 "
+    "시작 화면의 OpenAI 연결 버튼을 눌러 로그인하세요."
+)
+
+
+class OAuthRequiredError(RuntimeError):
+    pass
+
+
+def _require_openai_oauth() -> None:
+    if not check_openai_oauth_proxy().connected:
+        raise OAuthRequiredError(OAUTH_REQUIRED_MESSAGE)
+
+
+def _http_sidecar(payload: dict[str, Any]) -> dict[str, Any]:
+    return call_llm_sidecar(payload, timeout_seconds=8)
+
+
+def openai_status_response() -> dict[str, Any]:
+    status = check_openai_oauth_proxy()
+    auth_file = find_existing_auth_file()
+    return {
+        "connected": status.connected,
+        "message": status.message,
+        "models": status.models,
+        "authFileExists": auth_file is not None,
+    }
+
+
+def openai_connect_response() -> dict[str, Any]:
+    status = check_openai_oauth_proxy()
+    if status.connected:
+        return {
+            "connected": True,
+            "action": "already_connected",
+            "message": "OpenAI OAuth proxy가 이미 연결되어 있습니다.",
+            "models": status.models,
+        }
+
+    auth_file = find_existing_auth_file()
+    if auth_file is None:
+        process = start_codex_login(cwd=PROJECT_ROOT)
+        return {
+            "connected": False,
+            "action": "login_started",
+            "pid": process.pid,
+            "message": "OpenAI OAuth 로그인 페이지를 열었습니다. 로그인 후 다시 연결을 확인하세요.",
+        }
+
+    process = start_openai_oauth_proxy(cwd=PROJECT_ROOT)
+    return {
+        "connected": False,
+        "action": "proxy_started",
+        "pid": process.pid,
+        "message": "OpenAI OAuth 세션을 찾았습니다. 로컬 proxy를 시작했습니다.",
+    }
 
 
 def _week_start(value: date) -> date:
@@ -255,6 +321,10 @@ def _plan_input_from_request(
     parser_kwargs: dict[str, Any] = {"reference_date": reference_date}
     if sidecar is not None:
         parser_kwargs["sidecar"] = sidecar
+    else:
+        _require_openai_oauth()
+        parser_kwargs["sidecar"] = _http_sidecar
+        parser_kwargs["max_retries"] = 1
     plan_input = parse_natural_language_input(str(request.get("text") or ""), **parser_kwargs)
     if "bufferRatio" in request:
         plan_input = plan_input.model_copy(
@@ -308,7 +378,9 @@ def replan_response(
     backend = draft.get("backend") or {}
     plan_input = DayPlanInput.model_validate(backend.get("planInput"))
     reason = _combined_replan_reason(request)
-    use_llm_replan = sidecar is None and check_openai_oauth_proxy().connected
+    if sidecar is None:
+        _require_openai_oauth()
+    use_llm_replan = sidecar is None
     state = build_planner_graph().invoke(
         {
             "parsed_input": plan_input,

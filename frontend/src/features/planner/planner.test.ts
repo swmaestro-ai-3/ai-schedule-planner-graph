@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aiStatusButtonLabel } from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
-import { agentBusyCopy } from "./components/AgentChat";
+import { agentBusyCopy, agentPreviewItems, agentProposalSummary } from "./components/AgentChat";
 import { plannerSteps } from "./data/plannerSteps";
 import { calendarBlocks, weekDateLabels } from "./lib/calendar";
 import type { ScheduleItem } from "./types/planner";
@@ -89,17 +89,33 @@ describe("planner frontend contracts", () => {
 
   it("uses explicit agent progress copy for create and replan states", () => {
     expect(agentBusyCopy(false)).toEqual({
-      title: "일정안을 만드는 중",
-      detail: "요청을 구조화하고 가용 시간에 맞춰 캘린더 블록을 배치하고 있습니다.",
+      title: "일정안을 쓰는 중",
+      detail: "요청을 구조화하고 초안으로 보여줄 캘린더 배치를 준비하고 있습니다.",
     });
     expect(agentBusyCopy(true)).toEqual({
-      title: "요청을 반영하는 중",
-      detail: "기존 일정과 피드백을 비교해서 주간 캘린더를 다시 배치하고 있습니다.",
+      title: "수정안을 쓰는 중",
+      detail: "현재 제안과 피드백을 비교해서 반영 전 수정안을 준비하고 있습니다.",
     });
+  });
+
+  it("summarizes an agent proposal before it is committed to the calendar", async () => {
+    const draft = await mockPlannerApi.createPlan({
+      mode: "structured",
+      bufferRatio: 15,
+      fixedEvents: [],
+      tasks: [],
+    });
+
+    expect(agentProposalSummary(draft)).toBe("고정 일정 1개, 작업 3개를 배치한 초안입니다.");
+    expect(agentPreviewItems(draft, 2)).toEqual([
+      "월 09:00-10:00 팀 미팅",
+      "월 10:30-12:30 기획서 작성",
+    ]);
   });
 
   it("labels the disconnected AI status pill as a connection action", () => {
     expect(aiStatusButtonLabel(false)).toBe("AI 미연결, 클릭해서 연결");
+    expect(aiStatusButtonLabel(false, true)).toBe("AI 연결 확인 중");
     expect(aiStatusButtonLabel(true)).toBe("AI 연결됨");
   });
 });

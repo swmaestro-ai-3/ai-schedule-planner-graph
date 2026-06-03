@@ -12,6 +12,23 @@ function cloneDraft(draft: PlannerDraft): PlannerDraft {
 export interface PlannerApi {
   createPlan(input: CreatePlanInput): Promise<PlannerDraft>;
   replan(draft: PlannerDraft, input: ReplanInput): Promise<PlannerDraft>;
+  getOpenAIStatus(): Promise<OpenAIStatus>;
+  connectOpenAI(): Promise<OpenAIConnectResult>;
+}
+
+export interface OpenAIStatus {
+  connected: boolean;
+  message: string;
+  models: string[];
+  authFileExists: boolean;
+}
+
+export interface OpenAIConnectResult {
+  connected: boolean;
+  action: "already_connected" | "login_started" | "proxy_started";
+  message: string;
+  models?: string[];
+  pid?: number;
 }
 
 type Fetcher = typeof fetch;
@@ -42,6 +59,15 @@ async function postJson<T>(
   return payload as T;
 }
 
+async function getJson<T>(baseUrl: string, fetcher: Fetcher, path: string): Promise<T> {
+  const response = await fetcher(`${baseUrl}${path}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload?.error || "Planner API request failed");
+  }
+  return payload as T;
+}
+
 export function createHttpPlannerApi(options: HttpPlannerApiOptions = {}): PlannerApi {
   const baseUrl = (options.baseUrl ?? defaultBaseUrl).replace(/\/$/, "");
   const fetcher = options.fetcher ?? fetch;
@@ -54,6 +80,12 @@ export function createHttpPlannerApi(options: HttpPlannerApiOptions = {}): Plann
         draft,
         ...input,
       });
+    },
+    getOpenAIStatus() {
+      return getJson<OpenAIStatus>(baseUrl, fetcher, "/api/openai/status");
+    },
+    connectOpenAI() {
+      return postJson<OpenAIConnectResult>(baseUrl, fetcher, "/api/openai/connect", {});
     },
   };
 }
@@ -89,6 +121,24 @@ export const mockPlannerApi: PlannerApi = {
         { label: "여유", status: "ok", detail: "수정 후 유지" },
         { label: "변경", status: "warning", detail: "피드백 반영됨" },
       ],
+    };
+  },
+
+  async getOpenAIStatus() {
+    return {
+      connected: false,
+      message: "mock disconnected",
+      models: [],
+      authFileExists: false,
+    };
+  },
+
+  async connectOpenAI() {
+    return {
+      connected: false,
+      action: "login_started",
+      message: "OpenAI OAuth 로그인 페이지를 열었습니다. 로그인 후 다시 연결을 확인하세요.",
+      pid: 1234,
     };
   },
 };

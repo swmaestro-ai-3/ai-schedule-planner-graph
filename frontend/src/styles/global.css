@@ -60,7 +60,8 @@ button:disabled {
   flex-direction: column;
 }
 
-.app-error {
+.app-error,
+.app-notice {
   position: fixed;
   top: 84px;
   left: 50%;
@@ -75,6 +76,12 @@ button:disabled {
   font-size: 13px;
   font-weight: 800;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.app-notice {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .global-header {
@@ -444,6 +451,12 @@ select:focus {
   background: #fff7ed;
   color: #9a3412;
   border-color: #fed7aa;
+}
+
+.button.ghost {
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--line);
 }
 
 .center-action {
@@ -967,38 +980,89 @@ select:focus {
   color: white;
 }
 
-.agent-working {
-  display: grid;
-  gap: 8px;
-  min-width: min(280px, 86%);
-}
-
-.agent-working-row {
+.agent-typing {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 10px;
+  min-width: 148px;
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.typing-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  animation: typing-dot 1s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+.agent-typing > span:last-child {
+  color: var(--primary);
+  font-size: 12px;
   font-weight: 900;
 }
 
-.agent-working-row .agent-spinner {
+.agent-proposal {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: white;
+}
+
+.agent-proposal div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.agent-proposal div:first-child span {
   color: var(--primary);
+  font-size: 11px;
+  font-weight: 900;
 }
 
-.agent-progress {
-  position: relative;
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: #e2e8f0;
+.agent-proposal div:first-child strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.agent-progress span {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 42%;
-  border-radius: inherit;
-  background: var(--primary);
-  animation: agent-progress 1.15s ease-in-out infinite;
+.agent-proposal ul {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  list-style: none;
+}
+
+.agent-proposal li {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agent-proposal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .agent-panel form {
@@ -1037,15 +1101,18 @@ select:focus {
   }
 }
 
-@keyframes agent-progress {
+@keyframes typing-dot {
   0% {
-    transform: translateX(-110%);
+    transform: translateY(0);
+    opacity: 0.4;
   }
-  55% {
-    transform: translateX(95%);
+  45% {
+    transform: translateY(-3px);
+    opacity: 1;
   }
   100% {
-    transform: translateX(240%);
+    transform: translateY(0);
+    opacity: 0.4;
   }
 }
 
@@ -1097,7 +1164,8 @@ select:focus {
 
   .time-grid,
   .snooze-grid,
-  .done-actions {
+  .done-actions,
+  .agent-proposal-actions {
     grid-template-columns: 1fr;
   }
 
