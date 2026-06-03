@@ -88,6 +88,41 @@ def test_natural_language_parse_applies_defaults_for_short_task_input():
     assert result.tasks[0].end_date == date(2026, 6, 9)
 
 
+def test_natural_language_parse_expands_weekday_recurring_fixed_events():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [
+                    {
+                        "id": "bad-1",
+                        "title": "운동",
+                        "day_offset": 5,
+                        "start_time": "15:00",
+                        "end_time": "15:00",
+                    }
+                ],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "월요일부터 금요일까지 매일 15시에 운동 일정 만들어줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.date == date(2026, 6, 1)
+    assert [event.day_offset for event in result.fixed_events] == [0, 1, 2, 3, 4]
+    assert [event.title for event in result.fixed_events] == ["운동"] * 5
+    assert all(event.start_time == time(15, 0) for event in result.fixed_events)
+    assert all(event.end_time == time(16, 0) for event in result.fixed_events)
+
+
 def test_day_plan_parse_payload_includes_prompt_schema_and_context():
     payload = build_day_plan_parse_payload(
         "6월 3일 9시부터 23시까지 과제 계획해줘",

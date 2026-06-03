@@ -336,6 +336,7 @@ def place_tasks(
                 title=event.title,
                 start_offset=event.start_offset,
                 end_offset=event.end_offset,
+                day_offset=event.day_offset,
                 source_id=event.id,
                 reason="고정 일정입니다.",
             )
