@@ -54,3 +54,7 @@ password-equivalent credential material.
 ## Demo
 
 See `docs/demo-scenarios.md` for the student and junior developer demo inputs.
+
+## Product Docs
+
+- `docs/frontend-upgrade-inventory.md`: backend stack, feature inventory, and CTA inventory for frontend upgrade planning.
