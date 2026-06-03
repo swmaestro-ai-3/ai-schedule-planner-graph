@@ -1383,7 +1383,8 @@ def render_natural_language_tab() -> None:
     raw_input = st.text_area("자연어 일정 입력", height=160)
     if st.button("자연어 입력 구조화"):
         try:
-            plan_input = parse_natural_language_input(raw_input)
+            with st.spinner("자연어 입력을 구조화하는 중입니다."):
+                plan_input = parse_natural_language_input(raw_input)
         except LLMParserError as exc:
             st.error(str(exc))
             return
