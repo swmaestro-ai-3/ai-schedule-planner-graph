@@ -297,14 +297,12 @@ def _add_remaining_blocks_as_buffers(
     blocks: list[FreeBlock],
 ) -> None:
     for block in blocks:
-        if block.duration_minutes <= 0:
+        if block.duration_minutes <= 0 or block.block_type != BlockType.BUFFER:
             continue
         draft_plan.schedule_items.append(
             ScheduleItem(
-                type=ScheduleItemType.BUFFER
-                if block.block_type == BlockType.BUFFER
-                else ScheduleItemType.FREE,
-                title="Buffer" if block.block_type == BlockType.BUFFER else "Free",
+                type=ScheduleItemType.BUFFER,
+                title="Buffer",
                 start_offset=block.start_offset,
                 end_offset=block.end_offset,
                 day_offset=block.day_offset,

@@ -263,6 +263,32 @@ def test_tasks_balance_across_available_days_when_first_day_has_capacity():
     ]
 
 
+def test_remaining_available_time_is_left_empty_not_rendered_as_free_item():
+    task = Task(
+        id="review",
+        title="코드 리뷰",
+        estimated_minutes=30,
+        priority=3,
+        splittable=False,
+        focus_type=FocusType.LIGHT,
+    )
+
+    draft = place_tasks(
+        make_plan([task]),
+        [
+            FreeBlock(
+                id="b1",
+                start_offset=0,
+                end_offset=120,
+                block_type=BlockType.DEEP_WORK,
+            )
+        ],
+    )
+
+    assert all(item.type != ScheduleItemType.FREE for item in draft.schedule_items)
+    assert any(block.start_offset == 30 and block.end_offset == 120 for block in draft.free_blocks)
+
+
 def test_schedule_contains_fixed_task_and_buffer_items_in_order():
     task = Task(
         id="review",
