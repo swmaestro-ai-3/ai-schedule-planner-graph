@@ -7,6 +7,7 @@ from app import (
     build_google_oauth_config,
     build_snooze_feedback_text,
     build_structured_input,
+    calendar_week_dates,
     exportable_schedule_items,
     fixed_events_to_editor_rows,
     fixed_event_editor_column_labels,
@@ -389,7 +390,7 @@ def test_schedule_items_to_week_calendar_blocks_keeps_day_offsets():
 
     assert blocks == [
         {
-            "day_offset": 1,
+            "day_offset": 3,
             "date": "2026/06/04",
             "weekday": "Thu",
             "top": 0,
@@ -418,8 +419,42 @@ def test_week_calendar_blocks_treat_legacy_items_as_today():
         day_end=time(23, 0),
     )
 
-    assert blocks[0]["day_offset"] == 0
+    assert blocks[0]["day_offset"] == 2
     assert blocks[0]["date"] == "2026/06/03"
+
+
+def test_calendar_week_dates_are_monday_to_sunday_for_plan_date_week():
+    assert [
+        item.strftime("%Y/%m/%d")
+        for item in calendar_week_dates(date(2026, 6, 3))
+    ] == [
+        "2026/06/01",
+        "2026/06/02",
+        "2026/06/03",
+        "2026/06/04",
+        "2026/06/05",
+        "2026/06/06",
+        "2026/06/07",
+    ]
+
+
+def test_week_calendar_blocks_skip_items_outside_current_monday_sunday_week():
+    blocks = schedule_items_to_week_calendar_blocks(
+        [
+            ScheduleItem(
+                type=ScheduleItemType.TASK,
+                title="다음 주 작업",
+                start_offset=0,
+                end_offset=60,
+                day_offset=6,
+            )
+        ],
+        plan_date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+    )
+
+    assert blocks == []
 
 
 def test_validation_panel_rows_summarizes_user_review_inputs():
