@@ -5,10 +5,17 @@
   "description": "LangGraph-based daily schedule planner MVP with a Node OAuth LLM sidecar.",
   "license": "UNLICENSED",
   "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
+    "frontend:dev": "npm run dev --workspace @nextplan/web -- --host 127.0.0.1 --port 5173",
+    "frontend:build": "npm run build --workspace @nextplan/web",
+    "frontend:preview": "npm run preview --workspace @nextplan/web -- --host 127.0.0.1 --port 5173",
+    "test:frontend": "npm run test --workspace @nextplan/web -- --run",
     "llm:proxy": "openai-oauth",
     "llm:sidecar": "node llm_sidecar/openai_oauth_client.mjs",
-    "test": "pytest -q",
+    "test": "npm run test:python && npm run test:frontend",
     "test:python": "pytest -q"
   },
   "dependencies": {

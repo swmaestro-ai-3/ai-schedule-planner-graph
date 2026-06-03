@@ -1,0 +1,78 @@
+import type { PlannerDraft } from "../types/planner";
+
+export const defaultDraft: PlannerDraft = {
+  weekStart: "2026-06-01",
+  weekLabel: "2026.06.01 - 06.07",
+  replanCount: 0,
+  reason:
+    "고정 일정은 그대로 두고, 집중 작업은 오전과 이른 오후에 나눠 배치했습니다.",
+  validation: [
+    { label: "겹침", status: "ok", detail: "충돌 없음" },
+    { label: "여유", status: "ok", detail: "15% 확보" },
+    { label: "미배치", status: "ok", detail: "없음" },
+  ],
+  items: [
+    {
+      id: "fixed-standup",
+      type: "fixed",
+      title: "팀 미팅",
+      dayIndex: 0,
+      start: "09:00",
+      end: "10:00",
+      durationMinutes: 60,
+      note: "고정 일정",
+    },
+    {
+      id: "task-plan",
+      type: "task",
+      title: "기획서 작성",
+      dayIndex: 0,
+      start: "10:30",
+      end: "12:30",
+      durationMinutes: 120,
+      note: "집중 작업",
+      priority: "High",
+    },
+    {
+      id: "task-review",
+      type: "task",
+      title: "코드 리뷰",
+      dayIndex: 1,
+      start: "14:00",
+      end: "15:30",
+      durationMinutes: 90,
+      note: "분산 배치",
+      priority: "Medium",
+    },
+    {
+      id: "task-study",
+      type: "task",
+      title: "개발 공부",
+      dayIndex: 3,
+      start: "16:00",
+      end: "18:00",
+      durationMinutes: 120,
+      note: "마감 전 배치",
+      priority: "Medium",
+    },
+  ],
+};
+
+export const reflectionDraft: PlannerDraft = {
+  ...defaultDraft,
+  reason: "반복 루틴은 매일 같은 시간에 고정하고, 다른 작업은 주간 가용 시간에 분산했습니다.",
+  items: [
+    ...defaultDraft.items,
+    ...[0, 1, 2, 3, 4, 5, 6].map((dayIndex) => ({
+      id: `task-reflection-${dayIndex}`,
+      type: "task" as const,
+      title: "하루 회고",
+      dayIndex,
+      start: "23:00",
+      end: "24:00",
+      durationMinutes: 60,
+      note: "반복 루틴",
+      priority: "Low" as const,
+    })),
+  ],
+};
