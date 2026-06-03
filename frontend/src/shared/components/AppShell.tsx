@@ -1,4 +1,4 @@
-import { CalendarDays, Sparkles, Terminal } from "lucide-react";
+import { CalendarDays, GitBranch, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { plannerSteps } from "../../features/planner/data/plannerSteps";
 import type { PlannerStepId } from "../../features/planner/types/planner";
@@ -8,12 +8,14 @@ interface AppShellProps {
   aiConnected: boolean;
   aiConnecting: boolean;
   onGoHome: () => void;
+  onOpenGraph: () => void;
   onConnectAi: () => void;
   children: ReactNode;
 }
 
 export const homeButtonLabel = "시작 화면으로 돌아가기";
 export const brandLogoLabel = "NextPlan AI 캘린더 로고";
+export const graphButtonLabel = "LangGraph 보기";
 
 export function aiStatusButtonLabel(aiConnected: boolean, aiConnecting = false) {
   if (aiConnecting) return "AI 연결 확인 중";
@@ -25,6 +27,7 @@ export function AppShell({
   aiConnected,
   aiConnecting,
   onGoHome,
+  onOpenGraph,
   onConnectAi,
   children,
 }: AppShellProps) {
@@ -79,8 +82,13 @@ export function AppShell({
             <span />
             AI {aiConnecting ? "확인 중" : aiConnected ? "연결됨" : "미연결"}
           </button>
-          <button className="ghost-icon-button" type="button" aria-label="로그">
-            <Terminal size={16} />
+          <button
+            className="ghost-icon-button"
+            type="button"
+            aria-label={graphButtonLabel}
+            onClick={onOpenGraph}
+          >
+            <GitBranch size={16} />
           </button>
         </div>
       </header>

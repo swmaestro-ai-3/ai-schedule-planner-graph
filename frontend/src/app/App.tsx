@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { httpPlannerApi } from "../features/planner/api/plannerApi";
 import { AgentChat } from "../features/planner/components/AgentChat";
 import { DoneView } from "../features/planner/components/DoneView";
+import { GraphView } from "../features/planner/components/GraphView";
 import { InputView } from "../features/planner/components/InputView";
 import { ProposalView } from "../features/planner/components/ProposalView";
 import { SetupView } from "../features/planner/components/SetupView";
@@ -35,6 +36,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [graphOpen, setGraphOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +146,12 @@ export function App() {
     setError(null);
     setNotice(null);
     setAgentOpen(false);
+    setGraphOpen(false);
+  };
+
+  const openGraph = () => {
+    setGraphOpen(true);
+    setAgentOpen(false);
   };
 
   return (
@@ -152,11 +160,13 @@ export function App() {
       aiConnected={aiConnected}
       aiConnecting={aiConnecting}
       onGoHome={reset}
+      onOpenGraph={openGraph}
       onConnectAi={connectAi}
     >
       {error && <div className="app-error" role="alert">{error}</div>}
       {notice && <div className="app-notice" role="status">{notice}</div>}
-      {activeStep === "setup" && (
+      {graphOpen && <GraphView onBack={() => setGraphOpen(false)} />}
+      {!graphOpen && activeStep === "setup" && (
         <SetupView
           aiConnected={aiConnected}
           aiConnecting={aiConnecting}
@@ -164,8 +174,8 @@ export function App() {
           onNext={() => setActiveStep("input")}
         />
       )}
-      {activeStep === "input" && <InputView busy={busy} onCreatePlan={createPlan} />}
-      {activeStep === "proposal" && draft && (
+      {!graphOpen && activeStep === "input" && <InputView busy={busy} onCreatePlan={createPlan} />}
+      {!graphOpen && activeStep === "proposal" && draft && (
         <ProposalView
           draft={draft}
           onBack={() => setActiveStep("input")}
@@ -173,7 +183,7 @@ export function App() {
           onApprove={() => setActiveStep("done")}
         />
       )}
-      {activeStep === "done" && draft && <DoneView draft={draft} onReset={reset} />}
+      {!graphOpen && activeStep === "done" && draft && <DoneView draft={draft} onReset={reset} />}
       <AgentChat
         open={agentOpen}
         busy={busy}

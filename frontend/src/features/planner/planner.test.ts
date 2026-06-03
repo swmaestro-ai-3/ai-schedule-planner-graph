@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   aiStatusButtonLabel,
   brandLogoLabel,
+  graphButtonLabel,
   homeButtonLabel,
 } from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
 import { agentBusyCopy, agentPreviewItems, agentProposalSummary } from "./components/AgentChat";
+import { langGraphEdges, langGraphNodes, langGraphStats } from "./data/langGraphFlow";
 import { plannerSteps } from "./data/plannerSteps";
 import { calendarBlocks, weekDateLabels } from "./lib/calendar";
 import type { ScheduleItem } from "./types/planner";
@@ -126,5 +128,19 @@ describe("planner frontend contracts", () => {
   it("labels the brand control as a start screen action", () => {
     expect(homeButtonLabel).toBe("시작 화면으로 돌아가기");
     expect(brandLogoLabel).toBe("NextPlan AI 캘린더 로고");
+    expect(graphButtonLabel).toBe("LangGraph 보기");
+  });
+
+  it("documents the planner LangGraph structure for the graph page", () => {
+    expect(langGraphNodes.map((node) => node.id)).toContain("parse_input_node");
+    expect(langGraphNodes.map((node) => node.id)).toContain("approval_node");
+    expect(langGraphEdges.filter((edge) => edge.from === "validate_input_node" && edge.conditional)).toHaveLength(3);
+    expect(langGraphEdges.filter((edge) => edge.from === "approval_node" && edge.conditional)).toHaveLength(3);
+    expect(langGraphStats()).toEqual({
+      nodeCount: 14,
+      edgeCount: 19,
+      conditionalGateCount: 2,
+      exitPathCount: 5,
+    });
   });
 });
