@@ -1,6 +1,6 @@
-# AI Schedule Planner Graph
+# NextPlan AI
 
-LangGraph-based daily schedule planner MVP.
+LangGraph-based schedule planner backend with a standalone React frontend.
 
 ## Setup
 
@@ -23,21 +23,30 @@ npm test
 
 ## Run
 
+Primary frontend:
+
+```bash
+npm run frontend:dev
+```
+
+Legacy Streamlit entry:
+
 ```bash
 streamlit run app.py
 ```
 
 ## MVP Flow
 
-The Streamlit MVP is organized around four roles:
+The frontend is organized around one-purpose screens:
 
-- `사용자 입력`: enter fixed events and tasks through natural-language or structured tabs.
-- `AI 배치 제안`: view the proposed schedule as both a table and local day calendar.
-- `사용자 검증 및 피드백`: review warnings, unassigned tasks, and buffer status.
-- `AI 재배치 / 확정`: apply user feedback or approve the final plan.
+- `시작`: activity bounds and OpenAI connection status.
+- `입력`: natural-language or structured schedule input.
+- `제안`: weekly local calendar and placement rationale.
+- `수정`: validation, feedback, and snooze controls.
+- `완료`: confirmed schedule summary.
 
 Google Calendar helper code remains available for future integration, but the
-MVP UI uses the local calendar view instead of an external calendar connection.
+MVP UI uses the local weekly calendar view instead of an external calendar connection.
 
 ## OpenAI OAuth
 
@@ -58,3 +67,4 @@ See `docs/demo-scenarios.md` for the student and junior developer demo inputs.
 ## Product Docs
 
 - `docs/frontend-upgrade-inventory.md`: backend stack, feature inventory, and CTA inventory for frontend upgrade planning.
+- `docs/frontend-architecture.md`: frontend folder structure, screen model, and backend boundary.

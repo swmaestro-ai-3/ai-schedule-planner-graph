@@ -1,0 +1,60 @@
+export type PlannerStepId = "setup" | "input" | "proposal" | "review" | "done";
+
+export type ScheduleItemType = "fixed" | "task";
+
+export type InputMode = "natural" | "structured";
+
+export interface PlannerStep {
+  id: PlannerStepId;
+  index: number;
+  label: string;
+}
+
+export interface ScheduleItem {
+  id: string;
+  type: ScheduleItemType;
+  title: string;
+  dayIndex: number;
+  start: string;
+  end: string;
+  durationMinutes: number;
+  note: string;
+  priority?: "High" | "Medium" | "Low";
+}
+
+export interface ValidationRow {
+  label: string;
+  status: "ok" | "warning";
+  detail: string;
+}
+
+export interface PlannerDraft {
+  weekStart: string;
+  weekLabel: string;
+  reason: string;
+  items: ScheduleItem[];
+  validation: ValidationRow[];
+  replanCount: number;
+  lastFeedback?: string;
+}
+
+export interface NaturalPlanInput {
+  mode: "natural";
+  text: string;
+  bufferRatio: number;
+}
+
+export interface StructuredPlanInput {
+  mode: "structured";
+  bufferRatio: number;
+  fixedEvents: string[];
+  tasks: string[];
+}
+
+export type CreatePlanInput = NaturalPlanInput | StructuredPlanInput;
+
+export interface ReplanInput {
+  reason: string;
+  snoozeTaskId?: string;
+  snoozeDays: number;
+}
