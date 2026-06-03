@@ -6,7 +6,13 @@ import {
   homeButtonLabel,
 } from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
-import { agentBusyCopy, agentPreviewItems, agentProposalSummary } from "./components/AgentChat";
+import {
+  agentBusyCopy,
+  agentPreviewItems,
+  agentProposalSummary,
+  agentResetButtonLabel,
+  agentResetState,
+} from "./components/AgentChat";
 import { langGraphEdges, langGraphNodes, langGraphStats } from "./data/langGraphFlow";
 import { plannerSteps } from "./data/plannerSteps";
 import { calendarBlocks, weekDateLabels } from "./lib/calendar";
@@ -117,6 +123,20 @@ describe("planner frontend contracts", () => {
       "월 09:00-10:00 팀 미팅",
       "월 10:30-12:30 기획서 작성",
     ]);
+  });
+
+  it("resets the agent chat back to a fresh conversation state", () => {
+    expect(agentResetButtonLabel).toBe("채팅 초기화");
+    expect(agentResetState()).toEqual({
+      text: "",
+      pendingDraft: null,
+      messages: [
+        {
+          role: "agent",
+          text: "원하는 일정을 말해 주세요. 먼저 초안으로 보여드리고, 확인 후 캘린더에 반영합니다.",
+        },
+      ],
+    });
   });
 
   it("labels the disconnected AI status pill as a connection action", () => {

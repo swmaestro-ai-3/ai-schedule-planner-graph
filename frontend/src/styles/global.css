@@ -1313,6 +1313,12 @@ select:focus {
   font-weight: 700;
 }
 
+.agent-header-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .agent-panel header button {
   width: 30px;
   height: 30px;
@@ -1322,6 +1328,11 @@ select:focus {
   place-items: center;
   background: var(--surface-soft);
   color: var(--muted);
+}
+
+.agent-panel header button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .agent-messages {

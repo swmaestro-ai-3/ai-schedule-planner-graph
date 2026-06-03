@@ -1,4 +1,4 @@
-import { Bot, Check, LoaderCircle, Send, X } from "lucide-react";
+import { Bot, Check, LoaderCircle, RotateCcw, Send, X } from "lucide-react";
 import { useState } from "react";
 import type { CreatePlanInput, PlannerDraft, ReplanInput, ScheduleItem } from "../types/planner";
 
@@ -23,6 +23,11 @@ interface ChatMessage {
   text: string;
 }
 
+const initialAgentMessage: ChatMessage = {
+  role: "agent",
+  text: "원하는 일정을 말해 주세요. 먼저 초안으로 보여드리고, 확인 후 캘린더에 반영합니다.",
+};
+
 const createBusyCopy = {
   title: "일정안을 쓰는 중",
   detail: "요청을 구조화하고 초안으로 보여줄 캘린더 배치를 준비하고 있습니다.",
@@ -34,6 +39,16 @@ const replanBusyCopy = {
 };
 
 const MIN_TYPING_MS = 650;
+
+export const agentResetButtonLabel = "채팅 초기화";
+
+export function agentResetState() {
+  return {
+    text: "",
+    pendingDraft: null,
+    messages: [{ ...initialAgentMessage }],
+  };
+}
 
 export function agentBusyCopy(hasDraft: boolean) {
   return hasDraft ? replanBusyCopy : createBusyCopy;
@@ -73,12 +88,7 @@ export function AgentChat({
   const [text, setText] = useState("");
   const [typing, setTyping] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<PlannerDraft | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "agent",
-      text: "원하는 일정을 말해 주세요. 먼저 초안으로 보여드리고, 확인 후 캘린더에 반영합니다.",
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => agentResetState().messages);
 
   const workingDraft = pendingDraft ?? draft;
   const hasWorkingDraft = Boolean(workingDraft);
@@ -143,6 +153,14 @@ export function AgentChat({
     ]);
   };
 
+  const resetChat = () => {
+    if (isWorking) return;
+    const nextState = agentResetState();
+    setText(nextState.text);
+    setPendingDraft(nextState.pendingDraft);
+    setMessages(nextState.messages);
+  };
+
   return (
     <div className={`agent-chat ${isWorking ? "is-busy" : ""}`}>
       {open && (
@@ -160,9 +178,20 @@ export function AgentChat({
                       : "새 일정 조율"}
               </span>
             </div>
-            <button type="button" aria-label="닫기" onClick={() => onOpenChange(false)}>
-              <X size={16} />
-            </button>
+            <div className="agent-header-actions">
+              <button
+                type="button"
+                aria-label={agentResetButtonLabel}
+                title={agentResetButtonLabel}
+                onClick={resetChat}
+                disabled={isWorking}
+              >
+                <RotateCcw size={15} />
+              </button>
+              <button type="button" aria-label="닫기" onClick={() => onOpenChange(false)}>
+                <X size={16} />
+              </button>
+            </div>
           </header>
           <div className="agent-messages" aria-live="polite">
             {messages.map((message, index) => (
