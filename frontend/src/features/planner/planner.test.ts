@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { aiStatusButtonLabel, homeButtonLabel } from "../../shared/components/AppShell";
+import {
+  aiStatusButtonLabel,
+  brandLogoLabel,
+  homeButtonLabel,
+} from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
 import { agentBusyCopy, agentPreviewItems, agentProposalSummary } from "./components/AgentChat";
 import { plannerSteps } from "./data/plannerSteps";
@@ -121,5 +125,6 @@ describe("planner frontend contracts", () => {
 
   it("labels the brand control as a start screen action", () => {
     expect(homeButtonLabel).toBe("시작 화면으로 돌아가기");
+    expect(brandLogoLabel).toBe("NextPlan AI 캘린더 로고");
   });
 });

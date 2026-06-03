@@ -54,6 +54,17 @@ button:disabled {
   opacity: 0.58;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .app-shell {
   min-height: 100vh;
   display: flex;
@@ -126,14 +137,58 @@ button:disabled {
 }
 
 .brand-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: var(--radius);
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  overflow: hidden;
+  border-radius: 14px;
   display: grid;
   place-items: center;
-  background: var(--primary);
+  background:
+    radial-gradient(circle at 82% 20%, rgba(254, 243, 199, 0.88) 0 9%, transparent 10%),
+    linear-gradient(145deg, #111827 0%, #4f46e5 58%, #059669 100%);
   color: white;
-  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.18);
+  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.2);
+}
+
+.brand-icon::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+}
+
+.brand-calendar-icon,
+.brand-spark-icon,
+.brand-route-mark {
+  position: relative;
+  z-index: 1;
+}
+
+.brand-calendar-icon {
+  transform: translate(-3px, 2px);
+  stroke-width: 2.15;
+}
+
+.brand-spark-icon {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  color: #fef3c7;
+  fill: rgba(254, 243, 199, 0.2);
+}
+
+.brand-route-mark {
+  position: absolute;
+  right: 9px;
+  bottom: 10px;
+  width: 13px;
+  height: 8px;
+  border-right: 2px solid rgba(255, 255, 255, 0.82);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.82);
+  border-radius: 0 0 5px 0;
 }
 
 .brand h1 {

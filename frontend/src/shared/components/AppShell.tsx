@@ -1,4 +1,4 @@
-import { Terminal, WandSparkles } from "lucide-react";
+import { CalendarDays, Sparkles, Terminal } from "lucide-react";
 import type { ReactNode } from "react";
 import { plannerSteps } from "../../features/planner/data/plannerSteps";
 import type { PlannerStepId } from "../../features/planner/types/planner";
@@ -13,6 +13,7 @@ interface AppShellProps {
 }
 
 export const homeButtonLabel = "시작 화면으로 돌아가기";
+export const brandLogoLabel = "NextPlan AI 캘린더 로고";
 
 export function aiStatusButtonLabel(aiConnected: boolean, aiConnecting = false) {
   if (aiConnecting) return "AI 연결 확인 중";
@@ -38,9 +39,12 @@ export function AppShell({
           aria-label={homeButtonLabel}
           onClick={onGoHome}
         >
-          <div className="brand-icon">
-            <WandSparkles size={18} />
+          <div className="brand-icon" aria-hidden="true">
+            <CalendarDays className="brand-calendar-icon" size={22} />
+            <Sparkles className="brand-spark-icon" size={13} />
+            <span className="brand-route-mark" />
           </div>
+          <span className="sr-only">{brandLogoLabel}</span>
           <div>
             <h1>NextPlan AI</h1>
             <p>주간 일정 자동 배치</p>
