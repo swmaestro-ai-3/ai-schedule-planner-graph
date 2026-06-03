@@ -123,6 +123,172 @@ def test_natural_language_parse_expands_weekday_recurring_fixed_events():
     assert all(event.end_time == time(16, 0) for event in result.fixed_events)
 
 
+def test_natural_language_parse_expands_daily_late_routine_from_text():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "매일 오후 11시에 하루 회고 일정으로 1시간 정도 루틴으로 넣어줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.date == date(2026, 6, 1)
+    assert result.day_end == time(23, 59)
+    assert [event.day_offset for event in result.fixed_events] == list(range(7))
+    assert [event.title for event in result.fixed_events] == ["하루 회고"] * 7
+    assert all(event.start_time == time(23, 0) for event in result.fixed_events)
+    assert all(event.end_time == time(23, 59) for event in result.fixed_events)
+
+
+def test_natural_language_parse_expands_relative_daily_routine():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "내일부터 3일 동안 매일 오전 8시에 명상 30분 루틴 넣어줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.date == date(2026, 6, 1)
+    assert result.day_start == time(8, 0)
+    assert [event.day_offset for event in result.fixed_events] == [3, 4, 5]
+    assert [event.title for event in result.fixed_events] == ["명상"] * 3
+    assert all(event.start_time == time(8, 0) for event in result.fixed_events)
+    assert all(event.end_time == time(8, 30) for event in result.fixed_events)
+
+
+def test_natural_language_parse_expands_weekday_shorthand_routine():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "이번 주 화목 저녁 7시에 헬스 1시간 고정 일정 추가해줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.date == date(2026, 6, 1)
+    assert [event.day_offset for event in result.fixed_events] == [1, 3]
+    assert [event.title for event in result.fixed_events] == ["헬스", "헬스"]
+    assert all(event.start_time == time(19, 0) for event in result.fixed_events)
+    assert all(event.end_time == time(20, 0) for event in result.fixed_events)
+
+
+def test_natural_language_parse_uses_rule_fallback_when_sidecar_fails():
+    def failing_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        raise LLMParserError("sidecar timeout")
+
+    result = parse_natural_language_input(
+        "이번 주 화목 저녁 7시에 헬스 1시간 고정 일정 추가해줘",
+        sidecar=failing_sidecar,
+        reference_date=date(2026, 6, 3),
+        max_retries=1,
+    )
+
+    assert result.date == date(2026, 6, 1)
+    assert [event.day_offset for event in result.fixed_events] == [1, 3]
+    assert [event.title for event in result.fixed_events] == ["헬스", "헬스"]
+
+
+def test_natural_language_parse_clamps_llm_midnight_end_time():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [
+                    {
+                        "id": "review-1",
+                        "title": "하루 회고",
+                        "day_offset": 0,
+                        "start_time": "23:00",
+                        "end_time": "24:00",
+                    }
+                ],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "매일 오후 11시에 하루 회고 일정으로 1시간 정도 루틴으로 넣어줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.fixed_events[0].start_time == time(23, 0)
+    assert result.fixed_events[0].end_time == time(23, 59)
+    assert result.day_end == time(23, 59)
+
+
+def test_natural_language_parse_extracts_explicit_daily_availability():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [
+                    {
+                        "id": "report",
+                        "title": "보고서 작성",
+                        "estimated_minutes": 180,
+                        "priority": 3,
+                        "splittable": False,
+                    }
+                ],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "보고서 작성 3시간 배치해줘. 매일 오후 2시부터 5시만 가능해",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert [window.day_offset for window in result.availability_windows] == list(range(7))
+    assert all(window.start_time == time(14, 0) for window in result.availability_windows)
+    assert all(window.end_time == time(17, 0) for window in result.availability_windows)
+
+
 def test_day_plan_parse_payload_includes_prompt_schema_and_context():
     payload = build_day_plan_parse_payload(
         "6월 3일 9시부터 23시까지 과제 계획해줘",
@@ -246,6 +412,54 @@ def test_ai_rejection_interpreter_clamps_snooze_days_to_week():
     )
 
     assert constraints.snoozed_task_days == {"algorithm": 6}
+
+
+def test_rejection_reason_snoozes_task_by_title_from_state():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[
+            {
+                "id": "report",
+                "title": "보고서 작성",
+                "estimated_minutes": 60,
+                "splittable": False,
+            }
+        ],
+    )
+
+    constraints = interpret_rejection_reason(
+        "보고서 작성은 내일로 미뤄줘",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert constraints.snoozed_task_days == {"report": 1}
+
+
+def test_rejection_reason_extracts_preferred_task_time_by_title():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[
+            {
+                "id": "report",
+                "title": "보고서 작성",
+                "estimated_minutes": 60,
+                "splittable": False,
+            }
+        ],
+    )
+
+    constraints = interpret_rejection_reason(
+        "보고서 작성은 오후 4시로 수정해줘",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert constraints.preferred_windows == {"report": "16:00"}
 
 
 def test_missing_date_validation_error_creates_clarification_question():

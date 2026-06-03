@@ -351,3 +351,60 @@ def test_fixed_event_schedule_items_keep_original_day_offsets():
         ("exercise-mon", 0),
         ("exercise-fri", 4),
     ]
+
+
+def test_preferred_window_places_non_splittable_task_at_requested_time():
+    task = Task(
+        id="report",
+        title="보고서 작성",
+        estimated_minutes=60,
+        priority=3,
+        splittable=False,
+    )
+
+    draft = place_tasks(
+        make_plan([task]),
+        [
+            FreeBlock(
+                id="day",
+                start_offset=0,
+                end_offset=540,
+                block_type=BlockType.DEEP_WORK,
+            )
+        ],
+        preferred_windows={"report": "16:00"},
+    )
+
+    task_items = [item for item in draft.schedule_items if item.type == ScheduleItemType.TASK]
+    assert len(task_items) == 1
+    assert task_items[0].source_id == "report"
+    assert task_items[0].start_offset == 420
+    assert task_items[0].end_offset == 480
+
+
+def test_preferred_window_overrides_splittable_task_default_path():
+    task = Task(
+        id="report",
+        title="보고서 작성",
+        estimated_minutes=60,
+        priority=3,
+        splittable=True,
+    )
+
+    draft = place_tasks(
+        make_plan([task]),
+        [
+            FreeBlock(
+                id="day",
+                start_offset=300,
+                end_offset=480,
+                block_type=BlockType.DEEP_WORK,
+            )
+        ],
+        preferred_windows={"report": "16:00"},
+    )
+
+    task_items = [item for item in draft.schedule_items if item.type == ScheduleItemType.TASK]
+    assert len(task_items) == 1
+    assert task_items[0].start_offset == 420
+    assert task_items[0].end_offset == 480
