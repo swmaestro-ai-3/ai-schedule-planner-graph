@@ -1,4 +1,4 @@
-export type PlannerStepId = "setup" | "input" | "proposal" | "review" | "done";
+export type PlannerStepId = "setup" | "input" | "proposal" | "done";
 
 export type ScheduleItemType = "fixed" | "task";
 
@@ -36,6 +36,9 @@ export interface PlannerDraft {
   validation: ValidationRow[];
   replanCount: number;
   lastFeedback?: string;
+  backend?: {
+    planInput?: unknown;
+  };
 }
 
 export interface NaturalPlanInput {

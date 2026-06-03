@@ -1,10 +1,15 @@
-import { useState } from "react";
-import { mockPlannerApi } from "../features/planner/api/plannerApi";
+import { useEffect, useState } from "react";
+import { httpPlannerApi } from "../features/planner/api/plannerApi";
+import { AgentChat } from "../features/planner/components/AgentChat";
 import { DoneView } from "../features/planner/components/DoneView";
 import { InputView } from "../features/planner/components/InputView";
 import { ProposalView } from "../features/planner/components/ProposalView";
-import { ReviewView } from "../features/planner/components/ReviewView";
 import { SetupView } from "../features/planner/components/SetupView";
+import {
+  clearStoredDraft,
+  loadStoredDraft,
+  saveStoredDraft,
+} from "../features/planner/lib/plannerStorage";
 import type {
   CreatePlanInput,
   PlannerDraft,
@@ -14,35 +19,60 @@ import type {
 import { AppShell } from "../shared/components/AppShell";
 
 export function App() {
-  const [activeStep, setActiveStep] = useState<PlannerStepId>("setup");
+  const [draft, setDraft] = useState<PlannerDraft | null>(() => loadStoredDraft());
+  const [activeStep, setActiveStep] = useState<PlannerStepId>(() =>
+    loadStoredDraft() ? "proposal" : "setup",
+  );
   const [aiConnected, setAiConnected] = useState(false);
-  const [draft, setDraft] = useState<PlannerDraft | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agentOpen, setAgentOpen] = useState(false);
+
+  useEffect(() => {
+    if (draft) {
+      saveStoredDraft(draft);
+    }
+  }, [draft]);
 
   const createPlan = async (input: CreatePlanInput) => {
     setBusy(true);
-    const next = await mockPlannerApi.createPlan(input);
-    setDraft(next);
-    setBusy(false);
-    setActiveStep("proposal");
+    setError(null);
+    try {
+      const next = await httpPlannerApi.createPlan(input);
+      setDraft(next);
+      setActiveStep("proposal");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "일정 생성 실패");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const replan = async (input: ReplanInput) => {
     if (!draft) return;
     setBusy(true);
-    const next = await mockPlannerApi.replan(draft, input);
-    setDraft(next);
-    setBusy(false);
-    setActiveStep("proposal");
+    setError(null);
+    try {
+      const next = await httpPlannerApi.replan(draft, input);
+      setDraft(next);
+      setActiveStep("proposal");
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "재배치 실패");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const reset = () => {
     setDraft(null);
+    clearStoredDraft();
     setActiveStep("setup");
+    setError(null);
   };
 
   return (
     <AppShell activeStep={activeStep} aiConnected={aiConnected}>
+      {error && <div className="app-error" role="alert">{error}</div>}
       {activeStep === "setup" && (
         <SetupView
           aiConnected={aiConnected}
@@ -55,14 +85,20 @@ export function App() {
         <ProposalView
           draft={draft}
           onBack={() => setActiveStep("input")}
-          onReview={() => setActiveStep("review")}
+          onReview={() => setAgentOpen(true)}
           onApprove={() => setActiveStep("done")}
         />
       )}
-      {activeStep === "review" && draft && (
-        <ReviewView draft={draft} onBack={() => setActiveStep("proposal")} onSubmit={replan} />
-      )}
       {activeStep === "done" && draft && <DoneView draft={draft} onReset={reset} />}
+      <AgentChat
+        open={agentOpen}
+        busy={busy}
+        hasDraft={Boolean(draft)}
+        draft={draft}
+        onOpenChange={setAgentOpen}
+        onCreatePlan={createPlan}
+        onReplan={replan}
+      />
     </AppShell>
   );
 }
