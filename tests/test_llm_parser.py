@@ -50,6 +50,44 @@ def test_fake_sidecar_output_becomes_day_plan_input():
     assert result.day_start == time(9, 0)
 
 
+def test_natural_language_parse_applies_defaults_for_short_task_input():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": None,
+                "day_end": None,
+                "fixed_events": [],
+                "tasks": [
+                    {
+                        "id": "task-1",
+                        "title": "알고리즘 과제",
+                        "estimated_minutes": 120,
+                        "priority": None,
+                        "splittable": None,
+                        "focus_type": None,
+                    }
+                ],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "알고리즘 과제 2시간 배치해줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.day_start == time(9, 0)
+    assert result.day_end == time(23, 0)
+    assert len(result.availability_windows) == 7
+    assert result.tasks[0].priority == 3
+    assert result.tasks[0].splittable is True
+    assert result.tasks[0].focus_type.value == "any"
+    assert result.tasks[0].start_date == date(2026, 6, 3)
+    assert result.tasks[0].end_date == date(2026, 6, 9)
+
+
 def test_day_plan_parse_payload_includes_prompt_schema_and_context():
     payload = build_day_plan_parse_payload(
         "6월 3일 9시부터 23시까지 과제 계획해줘",

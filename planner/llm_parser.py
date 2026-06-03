@@ -4,7 +4,7 @@ import json
 import re
 import subprocess
 from collections.abc import Callable
-from datetime import date
+from datetime import date, time, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,80 @@ class LLMParserError(RuntimeError):
 
 
 SidecarCallable = Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _date_or_default(value: Any, fallback: date) -> date:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            return fallback
+    return fallback
+
+
+def _time_text(value: Any, fallback: time) -> str:
+    if isinstance(value, time):
+        return value.strftime("%H:%M")
+    if isinstance(value, str) and value:
+        return value
+    return fallback.strftime("%H:%M")
+
+
+def _apply_day_plan_defaults(
+    value: Any,
+    *,
+    reference_date: date | None,
+) -> Any:
+    if not isinstance(value, dict):
+        return value
+
+    plan = dict(value)
+    plan_date = _date_or_default(
+        plan.get("date"),
+        reference_date or date.today(),
+    )
+    plan["date"] = plan_date.isoformat()
+    plan["day_start"] = _time_text(plan.get("day_start"), time(9, 0))
+    plan["day_end"] = _time_text(plan.get("day_end"), time(23, 0))
+    plan.setdefault("fixed_events", [])
+
+    if not plan.get("availability_windows"):
+        plan["availability_windows"] = [
+            {
+                "id": f"available-{day_offset}",
+                "day_offset": day_offset,
+                "start_time": plan["day_start"],
+                "end_time": plan["day_end"],
+            }
+            for day_offset in range(7)
+        ]
+
+    if "tasks" in plan and isinstance(plan["tasks"], list):
+        normalized_tasks: list[Any] = []
+        for index, task in enumerate(plan["tasks"], start=1):
+            if not isinstance(task, dict):
+                normalized_tasks.append(task)
+                continue
+            normalized_task = dict(task)
+            normalized_task["id"] = normalized_task.get("id") or f"task-{index}"
+            if normalized_task.get("priority") is None:
+                normalized_task["priority"] = 3
+            if normalized_task.get("splittable") is None:
+                normalized_task["splittable"] = True
+            normalized_task["focus_type"] = normalized_task.get("focus_type") or "any"
+            normalized_task["start_date"] = (
+                normalized_task.get("start_date") or plan_date.isoformat()
+            )
+            normalized_task["end_date"] = (
+                normalized_task.get("end_date")
+                or (plan_date + timedelta(days=6)).isoformat()
+            )
+            normalized_tasks.append(normalized_task)
+        plan["tasks"] = normalized_tasks
+
+    return plan
 
 
 def build_day_plan_parse_payload(
@@ -132,7 +206,12 @@ def parse_natural_language_input(
                     timezone=timezone,
                 )
             )
-            return DayPlanInput.model_validate(response.get("day_plan", response))
+            return DayPlanInput.model_validate(
+                _apply_day_plan_defaults(
+                    response.get("day_plan", response),
+                    reference_date=reference_date,
+                )
+            )
         except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
             last_error = exc
     raise LLMParserError("Structured input is required") from last_error
