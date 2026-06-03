@@ -12,6 +12,7 @@
     "frontend:dev": "npm run dev --workspace @nextplan/web -- --host 127.0.0.1 --port 5173",
     "frontend:build": "npm run build --workspace @nextplan/web",
     "frontend:preview": "npm run preview --workspace @nextplan/web -- --host 127.0.0.1 --port 5173",
+    "backend:dev": "python3.11 -m backend.server --host 127.0.0.1 --port 8010",
     "test:frontend": "npm run test --workspace @nextplan/web -- --run",
     "llm:proxy": "openai-oauth",
     "llm:sidecar": "node llm_sidecar/openai_oauth_client.mjs",

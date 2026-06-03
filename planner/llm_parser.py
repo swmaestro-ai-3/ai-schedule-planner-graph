@@ -638,6 +638,9 @@ def _extract_snooze_days(
         "내일": 1,
         "모레": 2,
         "글피": 3,
+        "하루": 1,
+        "이틀": 2,
+        "사흘": 3,
     }
     for token, days in relative_days.items():
         if token in reason:

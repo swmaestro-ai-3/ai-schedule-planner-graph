@@ -26,8 +26,12 @@ npm test
 Primary frontend:
 
 ```bash
+npm run backend:dev
 npm run frontend:dev
 ```
+
+The frontend calls `http://127.0.0.1:8010` by default. Set
+`VITE_PLANNER_API_URL` when the planner API runs elsewhere.
 
 Legacy Streamlit entry:
 

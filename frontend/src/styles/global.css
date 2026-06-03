@@ -60,6 +60,23 @@ button:disabled {
   flex-direction: column;
 }
 
+.app-error {
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  max-width: min(680px, calc(100vw - 32px));
+  padding: 12px 16px;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
 .global-header {
   min-height: 72px;
   padding: 16px 24px;
@@ -821,6 +838,116 @@ select:focus {
   gap: 10px;
 }
 
+.agent-chat {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+.agent-fab {
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 18px 36px rgba(79, 70, 229, 0.28);
+}
+
+.agent-panel {
+  width: min(380px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+.agent-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-panel header strong,
+.agent-panel header span {
+  display: block;
+}
+
+.agent-panel header strong {
+  font-size: 14px;
+}
+
+.agent-panel header span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.agent-panel header button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.agent-messages {
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: #f8fafc;
+}
+
+.agent-message {
+  max-width: 86%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.agent-message.agent {
+  align-self: flex-start;
+  background: white;
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.agent-message.user {
+  align-self: flex-end;
+  background: var(--primary);
+  color: white;
+}
+
+.agent-panel form {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.agent-panel textarea {
+  margin-top: 0;
+  min-height: 82px;
+}
+
 @media (max-width: 960px) {
   .global-header {
     grid-template-columns: 1fr;
@@ -871,5 +998,10 @@ select:focus {
   .snooze-grid,
   .done-actions {
     grid-template-columns: 1fr;
+  }
+
+  .agent-chat {
+    right: 16px;
+    bottom: 16px;
   }
 }

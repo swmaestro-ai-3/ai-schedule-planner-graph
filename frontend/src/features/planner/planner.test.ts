@@ -10,7 +10,6 @@ describe("planner frontend contracts", () => {
       "시작",
       "입력",
       "제안",
-      "수정",
       "완료",
     ]);
   });
