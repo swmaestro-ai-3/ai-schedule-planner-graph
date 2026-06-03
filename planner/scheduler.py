@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from datetime import date, datetime, timedelta
 
 from planner.models import (
@@ -265,6 +266,48 @@ def _consume_block(block: FreeBlock, minutes: int) -> tuple[FreeBlock | None, in
     )
 
 
+def _consume_block_at(
+    block: FreeBlock,
+    start: int,
+    minutes: int,
+) -> tuple[list[FreeBlock], int, int]:
+    end = start + minutes
+    remaining_blocks: list[FreeBlock] = []
+    if block.start_offset < start:
+        remaining_blocks.append(
+            FreeBlock(
+                id=f"{block.id}-before",
+                day_offset=block.day_offset,
+                start_offset=block.start_offset,
+                end_offset=start,
+                block_type=block.block_type,
+            )
+        )
+    if end < block.end_offset:
+        block_type = block.block_type
+        if block.end_offset - end < 30:
+            block_type = BlockType.BUFFER
+        remaining_blocks.append(
+            FreeBlock(
+                id=f"{block.id}-after",
+                day_offset=block.day_offset,
+                start_offset=end,
+                end_offset=block.end_offset,
+                block_type=block_type,
+            )
+        )
+    return remaining_blocks, start, end
+
+
+def _clock_text_to_offset(value: str, plan_input: DayPlanInput) -> int | None:
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", value.strip())
+    if match is None:
+        return None
+    minutes = int(match.group(1)) * 60 + int(match.group(2))
+    day_start_minutes = plan_input.day_start.hour * 60 + plan_input.day_start.minute
+    return minutes - day_start_minutes
+
+
 def _find_best_block(
     task: Task,
     blocks: list[FreeBlock],
@@ -278,6 +321,36 @@ def _find_best_block(
         and task.estimated_minutes is not None
         and block.duration_minutes >= task.estimated_minutes
         and _block_matches_task_date_range(block, task, plan_input)
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda block: (
+            -day_task_minutes.get(block.day_offset, 0),
+            calculate_task_score(task, block, plan_input.date),
+            -block.day_offset,
+            -block.start_offset,
+        ),
+    )
+
+
+def _find_preferred_block(
+    task: Task,
+    blocks: list[FreeBlock],
+    plan_input: DayPlanInput,
+    preferred_start_offset: int,
+    day_task_minutes: dict[int, int],
+) -> FreeBlock | None:
+    if task.estimated_minutes is None:
+        return None
+    candidates = [
+        block
+        for block in blocks
+        if block.block_type != BlockType.BUFFER
+        and _block_matches_task_date_range(block, task, plan_input)
+        and block.start_offset <= preferred_start_offset
+        and preferred_start_offset + task.estimated_minutes <= block.end_offset
     ]
     if not candidates:
         return None
@@ -318,6 +391,7 @@ def place_tasks(
     ranked_tasks: list[Task] | None = None,
     normalized_events: list[NormalizedFixedEvent] | None = None,
     snoozed_task_days: dict[str, int] | None = None,
+    preferred_windows: dict[str, str] | None = None,
 ) -> DraftPlan:
     blocks = [block.model_copy() for block in classified_blocks]
     total_free_minutes = _remaining_free_minutes(blocks)
@@ -348,6 +422,7 @@ def place_tasks(
         reverse=True,
     )
     snoozed_task_days = snoozed_task_days or {}
+    preferred_windows = preferred_windows or {}
 
     for task in tasks:
         if task.estimated_minutes is None:
@@ -358,10 +433,24 @@ def place_tasks(
                 _make_snoozed_task_item(task, snoozed_task_days[task.id])
             )
             continue
-        if task.splittable:
+        if task.id in preferred_windows:
+            _place_non_splittable_task(
+                draft_plan,
+                task,
+                blocks,
+                plan_input,
+                preferred_start=preferred_windows.get(task.id),
+            )
+        elif task.splittable:
             _place_splittable_task(draft_plan, task, blocks, plan_input)
         else:
-            _place_non_splittable_task(draft_plan, task, blocks, plan_input)
+            _place_non_splittable_task(
+                draft_plan,
+                task,
+                blocks,
+                plan_input,
+                preferred_start=preferred_windows.get(task.id),
+            )
 
     _add_remaining_blocks_as_buffers(draft_plan, blocks)
     draft_plan.schedule_items = sorted(
@@ -377,8 +466,24 @@ def _place_non_splittable_task(
     task: Task,
     blocks: list[FreeBlock],
     plan_input: DayPlanInput,
+    preferred_start: str | None = None,
 ) -> None:
-    block = _find_best_block(task, blocks, plan_input, _task_minutes_by_day(draft_plan))
+    day_task_minutes = _task_minutes_by_day(draft_plan)
+    preferred_start_offset = (
+        _clock_text_to_offset(preferred_start, plan_input)
+        if preferred_start is not None
+        else None
+    )
+    block = None
+    if preferred_start_offset is not None:
+        block = _find_preferred_block(
+            task,
+            blocks,
+            plan_input,
+            preferred_start_offset,
+            day_task_minutes,
+        )
+    block = block or _find_best_block(task, blocks, plan_input, day_task_minutes)
     if block is None:
         _append_unassigned(draft_plan, task, UnassignedReasonCode.NO_AVAILABLE_BLOCK)
         return
@@ -389,11 +494,19 @@ def _place_non_splittable_task(
         return
 
     index = blocks.index(block)
-    new_block, start, end = _consume_block(block, task.estimated_minutes)
-    if new_block is None:
+    if preferred_start_offset is not None and block.start_offset <= preferred_start_offset:
+        new_blocks, start, end = _consume_block_at(
+            block,
+            preferred_start_offset,
+            task.estimated_minutes,
+        )
+    else:
+        new_block, start, end = _consume_block(block, task.estimated_minutes)
+        new_blocks = [] if new_block is None else [new_block]
+    if not new_blocks:
         blocks.pop(index)
     else:
-        blocks[index] = new_block
+        blocks[index : index + 1] = new_blocks
     draft_plan.schedule_items.append(
         _make_task_item(
             task,

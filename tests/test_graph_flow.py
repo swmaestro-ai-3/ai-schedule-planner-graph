@@ -220,6 +220,47 @@ def test_rejected_input_can_snooze_task_to_next_day(monkeypatch):
     assert result["replan_constraints"].snoozed_task_days == {"task-1": 1}
 
 
+def test_rejected_input_can_apply_preferred_task_time(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "preferred_windows": {"task-1": "11:00"},
+                "fixed_event_buffer_after": 0,
+                "snoozed_task_days": {},
+                "notes": ["사용자가 코드 리뷰 시간을 수정했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    plan_input = make_valid_input().model_copy(
+        update={
+            "fixed_events": [],
+            "day_end": time(18, 0),
+        }
+    )
+    result = invoke_graph(
+        {
+            "parsed_input": plan_input,
+            "approval_status": "rejected",
+            "rejection_reason": "코드 리뷰를 11시로 수정해줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    task_items = [
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "task-1"
+    ]
+    assert len(task_items) == 1
+    assert task_items[0].start_offset == 120
+    assert result["replan_constraints"].preferred_windows == {"task-1": "11:00"}
+
+
 def test_replan_limit_stops_automatic_replanning():
     result = invoke_graph(
         {

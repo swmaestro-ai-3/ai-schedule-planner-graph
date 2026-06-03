@@ -186,6 +186,9 @@ def place_tasks_node(state: PlannerState) -> PlannerState:
         snoozed_task_days=replan_constraints.snoozed_task_days
         if replan_constraints
         else None,
+        preferred_windows=replan_constraints.preferred_windows
+        if replan_constraints
+        else None,
     )
     return {
         "draft_plan": draft,

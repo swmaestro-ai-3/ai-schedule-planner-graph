@@ -30,6 +30,23 @@ WEEKDAY_INDEXES = {
     "일": 6,
 }
 
+KOREAN_NUMBER_VALUES = {
+    "한": 1,
+    "하나": 1,
+    "두": 2,
+    "둘": 2,
+    "세": 3,
+    "셋": 3,
+    "네": 4,
+    "넷": 4,
+    "다섯": 5,
+    "여섯": 6,
+}
+
+KOREAN_TIME_PATTERN = re.compile(
+    r"(?:(오전|오후|저녁|밤|아침|새벽)\s*)?(\d{1,2})시(?!간)(?:\s*(\d{1,2})분)?"
+)
+
 
 def _date_or_default(value: Any, fallback: date) -> date:
     if isinstance(value, date):
@@ -50,10 +67,177 @@ def _time_text(value: Any, fallback: time) -> str:
     return fallback.strftime("%H:%M")
 
 
+def _number_text_to_int(value: str | None) -> int | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if normalized.isdigit():
+        return int(normalized)
+    return KOREAN_NUMBER_VALUES.get(normalized)
+
+
+def _time_text_to_minutes(value: Any, fallback: time) -> int:
+    if isinstance(value, time):
+        return value.hour * 60 + value.minute
+    if isinstance(value, str):
+        match = re.fullmatch(r"(\d{1,2}):(\d{2})", value.strip())
+        if match:
+            hour = int(match.group(1))
+            minute = int(match.group(2))
+            if hour == 24 and minute == 0:
+                return 24 * 60
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return hour * 60 + minute
+    return fallback.hour * 60 + fallback.minute
+
+
+def _minutes_to_time_text(total_minutes: int) -> str:
+    clamped = max(0, min(total_minutes, 24 * 60 - 1))
+    return f"{clamped // 60:02d}:{clamped % 60:02d}"
+
+
 def _add_minutes_to_time_text(value: str, minutes: int) -> str:
-    hour, minute = [int(part) for part in value.split(":", maxsplit=1)]
-    total_minutes = hour * 60 + minute + minutes
-    return f"{total_minutes // 60:02d}:{total_minutes % 60:02d}"
+    total_minutes = _time_text_to_minutes(value, time(9, 0)) + minutes
+    return _minutes_to_time_text(total_minutes)
+
+
+def _korean_time_match_to_minutes(
+    match: re.Match[str],
+    *,
+    default_meridiem: str | None = None,
+) -> int:
+    return _korean_time_parts_to_minutes(
+        match.group(1),
+        match.group(2),
+        match.group(3),
+        default_meridiem=default_meridiem,
+    )
+
+
+def _korean_time_parts_to_minutes(
+    meridiem_value: str | None,
+    hour_value: str,
+    minute_value: str | None,
+    *,
+    default_meridiem: str | None = None,
+) -> int:
+    meridiem = meridiem_value or default_meridiem
+    hour = int(hour_value)
+    minute = int(minute_value or 0)
+    if meridiem in {"오후", "저녁", "밤"} and hour < 12:
+        hour += 12
+    if meridiem in {"오전", "새벽"} and hour == 12:
+        hour = 0
+    return hour * 60 + minute
+
+
+def _find_first_korean_time(raw_text: str) -> tuple[int, int, re.Match[str]] | None:
+    match = KOREAN_TIME_PATTERN.search(raw_text)
+    if match is None:
+        return None
+    return _korean_time_match_to_minutes(match), match.end(), match
+
+
+def _parse_duration_minutes(raw_text: str, default_minutes: int = 60) -> int:
+    hour_match = re.search(
+        r"(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*시간(?:\s*(\d+)\s*분)?",
+        raw_text,
+    )
+    if hour_match:
+        hours = _number_text_to_int(hour_match.group(1)) or 0
+        minutes = int(hour_match.group(2) or 0)
+        return max(1, hours * 60 + minutes)
+    minute_match = re.search(r"(\d+)\s*분", raw_text)
+    if minute_match:
+        return max(1, int(minute_match.group(1)))
+    return default_minutes
+
+
+def _strip_duration_words(value: str) -> str:
+    cleaned = re.sub(
+        r"(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*시간(?:\s*\d+\s*분)?\s*(?:정도|쯤|가량)?",
+        "",
+        value,
+    )
+    cleaned = re.sub(r"\d+\s*분\s*(?:정도|쯤|가량)?", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip(" .,은는을를으로로")
+
+
+def _extract_title_after_time(raw_text: str, time_end_index: int) -> str:
+    tail = raw_text[time_end_index:]
+    tail = re.sub(r"^\s*에\s*", "", tail)
+    match = re.search(
+        r"(.+?)\s*(?:일정으로|고정\s*일정|일정|루틴으로|루틴|스케줄|넣|추가|만들|생성|잡아)",
+        tail,
+    )
+    candidate = match.group(1) if match else tail
+    title = _strip_duration_words(candidate)
+    return title or "일정"
+
+
+def _week_start(reference_date: date) -> date:
+    return reference_date - timedelta(days=reference_date.weekday())
+
+
+def _unique_offsets(offsets: list[int]) -> list[int]:
+    return sorted({offset for offset in offsets if 0 <= offset <= 6})
+
+
+def _extract_day_offsets(raw_text: str, reference_date: date) -> list[int] | None:
+    range_match = re.search(
+        r"([월화수목금토일])요일부터\s*([월화수목금토일])요일까지",
+        raw_text,
+    )
+    if range_match:
+        start_day = WEEKDAY_INDEXES[range_match.group(1)]
+        end_day = WEEKDAY_INDEXES[range_match.group(2)]
+        if end_day >= start_day:
+            return list(range(start_day, end_day + 1))
+
+    relative_match = re.search(
+        r"(오늘|내일|모레|글피)?(?:부터)?\s*(\d+)일\s*동안.*?매일",
+        raw_text,
+    )
+    if relative_match:
+        relative_days = {"오늘": 0, None: 0, "내일": 1, "모레": 2, "글피": 3}
+        start_offset = reference_date.weekday() + relative_days[relative_match.group(1)]
+        duration_days = int(relative_match.group(2))
+        return _unique_offsets(
+            list(range(start_offset, start_offset + duration_days))
+        )
+
+    if "평일" in raw_text:
+        return list(range(5))
+    if "주말" in raw_text:
+        return [5, 6]
+
+    shorthand_offsets = {
+        "월화수목금": [0, 1, 2, 3, 4],
+        "월수금": [0, 2, 4],
+        "화목": [1, 3],
+        "토일": [5, 6],
+    }
+    for token, offsets in shorthand_offsets.items():
+        if token in raw_text:
+            return offsets
+
+    weekday_names = re.findall(r"([월화수목금토일])요일", raw_text)
+    if len(weekday_names) > 1:
+        return _unique_offsets([WEEKDAY_INDEXES[name] for name in weekday_names])
+
+    if "매일" in raw_text:
+        return list(range(7))
+    return None
+
+
+def _looks_like_fixed_event_request(raw_text: str) -> bool:
+    if "가능" in raw_text and "부터" in raw_text and "루틴" not in raw_text:
+        return any(marker in raw_text for marker in ("고정", "일정으로", "일정 추가"))
+    return any(
+        marker in raw_text
+        for marker in ("루틴", "고정", "일정", "스케줄", "캘린더", "넣어", "추가")
+    )
 
 
 def _extract_weekday_recurring_fixed_events(
@@ -61,26 +245,21 @@ def _extract_weekday_recurring_fixed_events(
     *,
     reference_date: date,
 ) -> tuple[date, list[dict[str, Any]]] | None:
-    match = re.search(
-        r"([월화수목금토일])요일부터\s*([월화수목금토일])요일까지.*?매일\s*(\d{1,2})시(?:\s*(\d{1,2})분)?(?:에)?\s*(.+?)\s*(?:일정|스케줄|만들|생성|잡아|추가)",
-        raw_text,
-    )
-    if match is None:
+    if not _looks_like_fixed_event_request(raw_text):
         return None
 
-    start_day = WEEKDAY_INDEXES[match.group(1)]
-    end_day = WEEKDAY_INDEXES[match.group(2)]
-    if end_day < start_day:
+    day_offsets = _extract_day_offsets(raw_text, reference_date)
+    time_match = _find_first_korean_time(raw_text)
+    if not day_offsets or time_match is None:
         return None
 
-    hour = int(match.group(3))
-    minute = int(match.group(4) or 0)
-    title = match.group(5).strip() or "일정"
-    start_time = f"{hour:02d}:{minute:02d}"
-    end_time = _add_minutes_to_time_text(start_time, 60)
-    week_start = reference_date - timedelta(days=reference_date.weekday())
+    start_minutes, time_end_index, _match = time_match
+    duration_minutes = _parse_duration_minutes(raw_text)
+    title = _extract_title_after_time(raw_text, time_end_index)
+    start_time = _minutes_to_time_text(start_minutes)
+    end_time = _minutes_to_time_text(start_minutes + duration_minutes)
     return (
-        week_start,
+        _week_start(reference_date),
         [
             {
                 "id": f"fixed-{day_offset}-{title}",
@@ -89,9 +268,52 @@ def _extract_weekday_recurring_fixed_events(
                 "start_time": start_time,
                 "end_time": end_time,
             }
-            for day_offset in range(start_day, end_day + 1)
+            for day_offset in day_offsets
         ],
     )
+
+
+def _extract_explicit_availability_windows(
+    raw_text: str,
+    *,
+    reference_date: date,
+) -> list[dict[str, Any]] | None:
+    if "가능" not in raw_text and "가용" not in raw_text:
+        return None
+    match = re.search(
+        r"(?:(오전|오후|저녁|밤|아침|새벽)\s*)?(\d{1,2})시(?!간)(?:\s*(\d{1,2})분)?\s*부터\s*"
+        r"(?:(오전|오후|저녁|밤|아침|새벽)\s*)?(\d{1,2})시(?!간)(?:\s*(\d{1,2})분)?",
+        raw_text,
+    )
+    if match is None:
+        return None
+
+    start_minutes = _korean_time_parts_to_minutes(
+        match.group(1),
+        match.group(2),
+        match.group(3),
+    )
+    end_minutes = _korean_time_parts_to_minutes(
+        match.group(4),
+        match.group(5),
+        match.group(6),
+        default_meridiem=match.group(1),
+    )
+    if end_minutes <= start_minutes:
+        end_minutes += 12 * 60
+    if end_minutes <= start_minutes:
+        return None
+
+    day_offsets = _extract_day_offsets(raw_text, reference_date) or list(range(7))
+    return [
+        {
+            "id": f"available-{day_offset}",
+            "day_offset": day_offset,
+            "start_time": _minutes_to_time_text(start_minutes),
+            "end_time": _minutes_to_time_text(end_minutes),
+        }
+        for day_offset in day_offsets
+    ]
 
 
 def _normalize_fixed_events_defaults(plan: dict[str, Any]) -> None:
@@ -105,14 +327,39 @@ def _normalize_fixed_events_defaults(plan: dict[str, Any]) -> None:
             continue
         normalized_event = dict(event)
         normalized_event["id"] = normalized_event.get("id") or f"event-{index}"
-        start_time = _time_text(normalized_event.get("start_time"), time(9, 0))
-        end_time = _time_text(normalized_event.get("end_time"), time(10, 0))
-        if end_time <= start_time:
-            end_time = _add_minutes_to_time_text(start_time, 60)
-        normalized_event["start_time"] = start_time
-        normalized_event["end_time"] = end_time
+        start_minutes = _time_text_to_minutes(
+            normalized_event.get("start_time"),
+            time(9, 0),
+        )
+        end_minutes = _time_text_to_minutes(
+            normalized_event.get("end_time"),
+            time(10, 0),
+        )
+        if end_minutes <= start_minutes:
+            end_minutes = start_minutes + 60
+        normalized_event["start_time"] = _minutes_to_time_text(start_minutes)
+        normalized_event["end_time"] = _minutes_to_time_text(end_minutes)
         normalized_events.append(normalized_event)
     plan["fixed_events"] = normalized_events
+
+
+def _expand_day_bounds_for_fixed_events(plan: dict[str, Any]) -> None:
+    fixed_events = plan.get("fixed_events")
+    if not isinstance(fixed_events, list):
+        return
+    day_start_minutes = _time_text_to_minutes(plan.get("day_start"), time(9, 0))
+    day_end_minutes = _time_text_to_minutes(plan.get("day_end"), time(23, 0))
+    event_starts: list[int] = []
+    event_ends: list[int] = []
+    for event in fixed_events:
+        if not isinstance(event, dict):
+            continue
+        event_starts.append(_time_text_to_minutes(event.get("start_time"), time(9, 0)))
+        event_ends.append(_time_text_to_minutes(event.get("end_time"), time(10, 0)))
+    if event_starts and min(event_starts) < day_start_minutes:
+        plan["day_start"] = _minutes_to_time_text(min(event_starts))
+    if event_ends and max(event_ends) > day_end_minutes:
+        plan["day_end"] = _minutes_to_time_text(max(event_ends))
 
 
 def _apply_day_plan_defaults(
@@ -145,8 +392,15 @@ def _apply_day_plan_defaults(
         plan["fixed_events"] = fixed_events
 
     _normalize_fixed_events_defaults(plan)
+    _expand_day_bounds_for_fixed_events(plan)
 
-    if not plan.get("availability_windows"):
+    explicit_availability = _extract_explicit_availability_windows(
+        raw_text,
+        reference_date=reference_date or plan_date,
+    )
+    if explicit_availability is not None:
+        plan["availability_windows"] = explicit_availability
+    elif not plan.get("availability_windows"):
         plan["availability_windows"] = [
             {
                 "id": f"available-{day_offset}",
@@ -303,7 +557,39 @@ def parse_natural_language_input(
             )
         except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
             last_error = exc
+            fallback_plan = _rule_based_day_plan_fallback(
+                raw_text,
+                reference_date=reference_date,
+                timezone=timezone,
+            )
+            if fallback_plan is not None:
+                return fallback_plan
     raise LLMParserError("Structured input is required") from last_error
+
+
+def _rule_based_day_plan_fallback(
+    raw_text: str,
+    *,
+    reference_date: date | None,
+    timezone: str,
+) -> DayPlanInput | None:
+    fallback_date = reference_date or date.today()
+    value = _apply_day_plan_defaults(
+        {
+            "date": fallback_date.isoformat(),
+            "timezone": timezone,
+            "day_start": None,
+            "day_end": None,
+            "availability_windows": [],
+            "fixed_events": [],
+            "tasks": [],
+        },
+        reference_date=reference_date,
+        raw_text=raw_text,
+    )
+    if not isinstance(value, dict) or not value.get("fixed_events"):
+        return None
+    return DayPlanInput.model_validate(value)
 
 
 def build_clarification_questions(errors: list[ValidationIssue]) -> list[str]:
@@ -322,8 +608,70 @@ def build_clarification_questions(errors: list[ValidationIssue]) -> list[str]:
     return questions
 
 
+def _tasks_from_state(current_state: dict[str, Any] | None) -> list[Any]:
+    plan_input = (current_state or {}).get("parsed_input")
+    return list(getattr(plan_input, "tasks", []) or [])
+
+
+def _matching_task_ids_from_reason(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> list[str]:
+    tasks = _tasks_from_state(current_state)
+    matched = [
+        task.id
+        for task in tasks
+        if getattr(task, "title", "") and getattr(task, "title", "") in reason
+    ]
+    if matched:
+        return matched
+    if len(tasks) == 1:
+        return [tasks[0].id]
+    return []
+
+
+def _extract_snooze_days(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> int | None:
+    relative_days = {
+        "내일": 1,
+        "모레": 2,
+        "글피": 3,
+    }
+    for token, days in relative_days.items():
+        if token in reason:
+            return days
+    day_match = re.search(r"(\d+)일\s*(?:뒤|후|뒤로|후로)", reason)
+    if day_match:
+        return int(day_match.group(1))
+    if "다음 주" in reason or "다음주" in reason:
+        return 6
+    weekday_match = re.search(r"([월화수목금토일])요일?로", reason)
+    if weekday_match:
+        plan_input = (current_state or {}).get("parsed_input")
+        plan_date = getattr(plan_input, "date", date.today())
+        target_weekday = WEEKDAY_INDEXES[weekday_match.group(1)]
+        delta = target_weekday - plan_date.weekday()
+        if delta <= 0:
+            delta += 7
+        return delta
+    return None
+
+
+def _extract_preferred_time(reason: str) -> str | None:
+    if not any(marker in reason for marker in ("수정", "변경", "바꿔", "옮겨")):
+        return None
+    time_match = _find_first_korean_time(reason)
+    if time_match is None:
+        return None
+    start_minutes, _time_end_index, _match = time_match
+    return _minutes_to_time_text(start_minutes)
+
+
 def _interpret_rejection_reason_with_rules(
     reason: str,
+    current_state: dict[str, Any] | None = None,
 ) -> ReplanConstraints:
     constraints = ReplanConstraints(notes=[reason])
     if "빡빡" in reason or "여유" in reason:
@@ -337,6 +685,16 @@ def _interpret_rejection_reason_with_rules(
         constraints.snoozed_task_days[snooze_match.group(1)] = int(
             snooze_match.group(2)
         )
+    elif any(marker in reason for marker in ("미뤄", "스누즈", "내일", "모레", "다음주", "다음 주")):
+        days = _extract_snooze_days(reason, current_state)
+        if days is not None:
+            for task_id in _matching_task_ids_from_reason(reason, current_state):
+                constraints.snoozed_task_days[task_id] = days
+
+    preferred_time = _extract_preferred_time(reason)
+    if preferred_time is not None:
+        for task_id in _matching_task_ids_from_reason(reason, current_state):
+            constraints.preferred_windows[task_id] = preferred_time
     return constraints
 
 
@@ -369,8 +727,9 @@ def _normalize_replan_constraints(
 def _merge_rule_constraints(
     constraints: ReplanConstraints,
     reason: str,
+    current_state: dict[str, Any] | None = None,
 ) -> ReplanConstraints:
-    rule_constraints = _interpret_rejection_reason_with_rules(reason)
+    rule_constraints = _interpret_rejection_reason_with_rules(reason, current_state)
     updates: dict[str, Any] = {}
 
     if rule_constraints.buffer_ratio_delta and not constraints.buffer_ratio_delta:
@@ -381,6 +740,11 @@ def _merge_rule_constraints(
         updates["snoozed_task_days"] = {
             **constraints.snoozed_task_days,
             **rule_constraints.snoozed_task_days,
+        }
+    if rule_constraints.preferred_windows:
+        updates["preferred_windows"] = {
+            **constraints.preferred_windows,
+            **rule_constraints.preferred_windows,
         }
 
     if not updates:
@@ -407,13 +771,14 @@ def interpret_rejection_reason(
                             response.get("replan_constraints", response)
                         ),
                         reason,
+                        current_state,
                     ),
                     reason,
                 )
             except (ValidationError, LLMParserError, json.JSONDecodeError) as exc:
                 last_error = exc
 
-    constraints = _interpret_rejection_reason_with_rules(reason)
+    constraints = _interpret_rejection_reason_with_rules(reason, current_state)
     if last_error is not None:
         constraints.notes.append(f"LLM 피드백 해석 fallback: {last_error}")
     return _normalize_replan_constraints(constraints, reason)
