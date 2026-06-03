@@ -261,6 +261,34 @@ def test_rejected_input_can_apply_preferred_task_time(monkeypatch):
     assert result["replan_constraints"].preferred_windows == {"task-1": "11:00"}
 
 
+def test_rejected_input_can_apply_task_duration_multiplier():
+    plan_input = make_valid_input().model_copy(
+        update={
+            "fixed_events": [],
+            "day_end": time(18, 0),
+        }
+    )
+
+    result = invoke_graph(
+        {
+            "parsed_input": plan_input,
+            "approval_status": "rejected",
+            "rejection_reason": "코드 리뷰 시간이 3배 정도 늘어야 할 거 같아",
+        }
+    )
+
+    task = next(task for task in result["parsed_input"].tasks if task.id == "task-1")
+    task_items = [
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "task-1"
+    ]
+
+    assert result["replan_constraints"].duration_multipliers == {"task-1": 3.0}
+    assert task.estimated_minutes == 90
+    assert task_items[0].duration_minutes == 90
+
+
 def test_replan_limit_stops_automatic_replanning():
     result = invoke_graph(
         {

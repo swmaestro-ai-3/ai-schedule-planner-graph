@@ -19,4 +19,5 @@ buffer_ratio_delta는 여유 시간 증가 비율이다. 더 여유롭게 요청
 fixed_event_buffer_after는 고정 일정 직후 휴식 시간(분)이다. 회의/수업 직후 쉬고 싶다는 요청은 최소 15를 사용한다.
 snoozed_task_days는 task id를 1~6일 뒤로 미루는 매핑이다. 내일로 미루기/스누즈 요청은 1을 사용한다.
 preferred_windows는 task id를 HH:MM 시작 희망 시간 문자열로 매핑한다. "오후 4시로 수정" 같은 요청은 "16:00"을 사용한다.
+duration_multipliers는 task id를 소요 시간 배수로 매핑한다. "기획서 작성 시간이 3배" 같은 요청은 {"해당 task id": 3.0}을 사용한다.
 """

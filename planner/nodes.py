@@ -97,6 +97,29 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
             }
         )
 
+    if constraints.duration_multipliers:
+        multipliers = constraints.duration_multipliers
+        updated_input = updated_input.model_copy(
+            update={
+                "tasks": [
+                    task.model_copy(
+                        update={
+                            "estimated_minutes": max(
+                                1,
+                                round(
+                                    (task.estimated_minutes or 0)
+                                    * multipliers.get(task.id, 1.0)
+                                ),
+                            )
+                        }
+                    )
+                    if task.id in multipliers and task.estimated_minutes
+                    else task
+                    for task in updated_input.tasks
+                ]
+            }
+        )
+
     return {
         "parsed_input": updated_input,
         "replan_constraints": constraints,

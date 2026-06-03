@@ -316,6 +316,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     assert "ReplanConstraints" in payload["prompt"]
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+    assert "duration_multipliers" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
 
 
 def test_ai_rejection_interpreter_can_use_sidecar_response():
@@ -460,6 +461,69 @@ def test_rejection_reason_extracts_preferred_task_time_by_title():
     )
 
     assert constraints.preferred_windows == {"report": "16:00"}
+
+
+def test_rejection_reason_extracts_task_duration_multiplier_by_title():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[
+            {
+                "id": "report",
+                "title": "기획서 작성",
+                "estimated_minutes": 120,
+                "splittable": False,
+            }
+        ],
+    )
+
+    constraints = interpret_rejection_reason(
+        "기획서 작성 시간이 3배 정도 늘어야 할 거 같아",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert constraints.duration_multipliers == {"report": 3.0}
+
+
+def test_machine_readable_duration_multiplier_overrides_sidecar_omission():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 3),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[
+            {
+                "id": "report",
+                "title": "기획서 작성",
+                "estimated_minutes": 120,
+                "splittable": False,
+            }
+        ],
+    )
+
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "preferred_windows": {},
+                "duration_multipliers": {},
+                "fixed_event_buffer_after": 0,
+                "snoozed_task_days": {},
+                "notes": ["모델이 시간 배수 변경을 누락했습니다."],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "기획서 작성 시간이 세 배 정도 늘어야 해",
+        current_state={"parsed_input": plan_input},
+        sidecar=fake_sidecar,
+    )
+
+    assert constraints.duration_multipliers == {"report": 3.0}
 
 
 def test_missing_date_validation_error_creates_clarification_question():

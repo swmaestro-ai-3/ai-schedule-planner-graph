@@ -353,7 +353,7 @@ def create_plan_response(
     return _planner_state_to_frontend(state=state, plan_input=plan_input)
 
 
-def _combined_replan_reason(request: dict[str, Any]) -> str:
+def _combined_replan_reason(request: dict[str, Any], *, previous_feedback: str = "") -> str:
     reason = str(request.get("reason") or "").strip()
     task_id = str(request.get("snoozeTaskId") or "").strip()
     if task_id:
@@ -366,6 +366,8 @@ def _combined_replan_reason(request: dict[str, Any]) -> str:
             ]
             if part
         )
+    if previous_feedback and previous_feedback not in reason:
+        reason = "\n".join(part for part in [previous_feedback, reason] if part)
     return reason
 
 
@@ -377,7 +379,10 @@ def replan_response(
     draft = request.get("draft") or {}
     backend = draft.get("backend") or {}
     plan_input = DayPlanInput.model_validate(backend.get("planInput"))
-    reason = _combined_replan_reason(request)
+    reason = _combined_replan_reason(
+        request,
+        previous_feedback=str(draft.get("lastFeedback") or "").strip(),
+    )
     if sidecar is None:
         _require_openai_oauth()
     use_llm_replan = sidecar is None

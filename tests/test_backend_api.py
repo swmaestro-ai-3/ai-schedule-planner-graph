@@ -88,6 +88,54 @@ def test_replan_response_understands_korean_day_snooze_without_control_id():
     assert after["dayIndex"] == 1
 
 
+def test_replan_response_keeps_prior_chat_feedback_when_duration_changes():
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 120분", "코드 리뷰 90분", "개발 공부 120분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    snoozed = replan_response(
+        {
+            "draft": draft,
+            "reason": "기획서 작성 내일로 미뤄줘",
+            "snoozeDays": 1,
+        },
+        sidecar=failing_sidecar,
+    )
+    after_snooze = next(item for item in snoozed["items"] if item["title"] == "기획서 작성")
+
+    resized = replan_response(
+        {
+            "draft": snoozed,
+            "reason": "기획서 작성 시간이 3배 정도 늘어야 할 거 같아",
+            "snoozeDays": 1,
+        },
+        sidecar=failing_sidecar,
+    )
+    after_resize = next(item for item in resized["items"] if item["title"] == "기획서 작성")
+    task_input = next(
+        task
+        for task in resized["backend"]["planInput"]["tasks"]
+        if task["title"] == "기획서 작성"
+    )
+
+    assert after_snooze["dayIndex"] == 1
+    assert after_snooze["durationMinutes"] == 120
+    assert after_resize["dayIndex"] == 1
+    assert after_resize["durationMinutes"] == 360
+    assert task_input["estimated_minutes"] == 360
+    assert "내일로" in resized["lastFeedback"]
+    assert "3배" in resized["lastFeedback"]
+
+
 def test_natural_plan_requires_openai_oauth_when_no_test_sidecar(monkeypatch):
     from backend import api
     from backend.api import OAuthRequiredError, create_plan_response

@@ -672,6 +672,53 @@ def _extract_preferred_time(reason: str) -> str | None:
     return _minutes_to_time_text(start_minutes)
 
 
+def _extract_duration_multiplier(reason: str) -> float | None:
+    if "절반" in reason or "반으로" in reason:
+        return 0.5
+    multiplier_match = re.search(
+        r"(\d+(?:\.\d+)?|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*배",
+        reason,
+    )
+    if multiplier_match is None:
+        return None
+    raw_value = multiplier_match.group(1)
+    if raw_value.replace(".", "", 1).isdigit():
+        return float(raw_value)
+    number_value = _number_text_to_int(raw_value)
+    return float(number_value) if number_value is not None else None
+
+
+def _duration_multiplier_requires_task_update(reason: str) -> bool:
+    return any(
+        marker in reason
+        for marker in (
+            "시간",
+            "소요",
+            "분량",
+            "기간",
+            "늘",
+            "증가",
+            "줄",
+            "감소",
+            "걸",
+            "필요",
+        )
+    )
+
+
+def _extract_duration_multipliers(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> dict[str, float]:
+    multiplier = _extract_duration_multiplier(reason)
+    if multiplier is None or not _duration_multiplier_requires_task_update(reason):
+        return {}
+    return {
+        task_id: multiplier
+        for task_id in _matching_task_ids_from_reason(reason, current_state)
+    }
+
+
 def _interpret_rejection_reason_with_rules(
     reason: str,
     current_state: dict[str, Any] | None = None,
@@ -698,6 +745,9 @@ def _interpret_rejection_reason_with_rules(
     if preferred_time is not None:
         for task_id in _matching_task_ids_from_reason(reason, current_state):
             constraints.preferred_windows[task_id] = preferred_time
+    constraints.duration_multipliers.update(
+        _extract_duration_multipliers(reason, current_state)
+    )
     return constraints
 
 
@@ -706,6 +756,14 @@ def _normalize_snoozed_task_days(values: dict[str, int]) -> dict[str, int]:
         str(task_id): max(1, min(int(days), 6))
         for task_id, days in values.items()
         if task_id and int(days) > 0
+    }
+
+
+def _normalize_duration_multipliers(values: dict[str, float]) -> dict[str, float]:
+    return {
+        str(task_id): max(0.25, min(float(multiplier), 6.0))
+        for task_id, multiplier in values.items()
+        if task_id and float(multiplier) > 0
     }
 
 
@@ -722,6 +780,11 @@ def _normalize_replan_constraints(
     normalized_snoozes = _normalize_snoozed_task_days(constraints.snoozed_task_days)
     if normalized_snoozes != constraints.snoozed_task_days:
         updates["snoozed_task_days"] = normalized_snoozes
+    normalized_multipliers = _normalize_duration_multipliers(
+        constraints.duration_multipliers
+    )
+    if normalized_multipliers != constraints.duration_multipliers:
+        updates["duration_multipliers"] = normalized_multipliers
     if updates:
         return constraints.model_copy(update=updates)
     return constraints
@@ -748,6 +811,11 @@ def _merge_rule_constraints(
         updates["preferred_windows"] = {
             **constraints.preferred_windows,
             **rule_constraints.preferred_windows,
+        }
+    if rule_constraints.duration_multipliers:
+        updates["duration_multipliers"] = {
+            **constraints.duration_multipliers,
+            **rule_constraints.duration_multipliers,
         }
 
     if not updates:
