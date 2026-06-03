@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aiStatusButtonLabel } from "../../shared/components/AppShell";
+import { aiStatusButtonLabel, homeButtonLabel } from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
 import { agentBusyCopy, agentPreviewItems, agentProposalSummary } from "./components/AgentChat";
 import { plannerSteps } from "./data/plannerSteps";
@@ -117,5 +117,9 @@ describe("planner frontend contracts", () => {
     expect(aiStatusButtonLabel(false)).toBe("AI 미연결, 클릭해서 연결");
     expect(aiStatusButtonLabel(false, true)).toBe("AI 연결 확인 중");
     expect(aiStatusButtonLabel(true)).toBe("AI 연결됨");
+  });
+
+  it("labels the brand control as a start screen action", () => {
+    expect(homeButtonLabel).toBe("시작 화면으로 돌아가기");
   });
 });

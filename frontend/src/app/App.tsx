@@ -142,6 +142,8 @@ export function App() {
     clearStoredDraft();
     setActiveStep("setup");
     setError(null);
+    setNotice(null);
+    setAgentOpen(false);
   };
 
   return (
@@ -149,6 +151,7 @@ export function App() {
       activeStep={activeStep}
       aiConnected={aiConnected}
       aiConnecting={aiConnecting}
+      onGoHome={reset}
       onConnectAi={connectAi}
     >
       {error && <div className="app-error" role="alert">{error}</div>}

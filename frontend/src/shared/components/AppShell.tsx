@@ -7,9 +7,12 @@ interface AppShellProps {
   activeStep: PlannerStepId;
   aiConnected: boolean;
   aiConnecting: boolean;
+  onGoHome: () => void;
   onConnectAi: () => void;
   children: ReactNode;
 }
+
+export const homeButtonLabel = "시작 화면으로 돌아가기";
 
 export function aiStatusButtonLabel(aiConnected: boolean, aiConnecting = false) {
   if (aiConnecting) return "AI 연결 확인 중";
@@ -20,6 +23,7 @@ export function AppShell({
   activeStep,
   aiConnected,
   aiConnecting,
+  onGoHome,
   onConnectAi,
   children,
 }: AppShellProps) {
@@ -28,7 +32,12 @@ export function AppShell({
   return (
     <div className="app-shell">
       <header className="global-header">
-        <div className="brand">
+        <button
+          className="brand brand-button"
+          type="button"
+          aria-label={homeButtonLabel}
+          onClick={onGoHome}
+        >
           <div className="brand-icon">
             <WandSparkles size={18} />
           </div>
@@ -36,7 +45,7 @@ export function AppShell({
             <h1>NextPlan AI</h1>
             <p>주간 일정 자동 배치</p>
           </div>
-        </div>
+        </button>
 
         <nav className="stepper" aria-label="작업 단계">
           {plannerSteps.map((step) => {
