@@ -398,6 +398,11 @@ def _date_label(plan_date: date, day_offset: int) -> str:
     return (plan_date + timedelta(days=day_offset)).strftime("%Y/%m/%d")
 
 
+def calendar_week_dates(plan_date: date, days: int = 7) -> list[date]:
+    week_start = plan_date - timedelta(days=plan_date.weekday())
+    return [week_start + timedelta(days=offset) for offset in range(days)]
+
+
 def _schedule_item_day_offset(item: ScheduleItem) -> int:
     raw_offset = getattr(item, "day_offset", 0)
     try:
@@ -477,19 +482,22 @@ def schedule_items_to_week_calendar_blocks(
         ).total_seconds()
         // 60
     )
+    week_dates = calendar_week_dates(plan_date, days)
+    week_start = week_dates[0]
+    week_end = week_dates[-1]
     blocks: list[dict[str, Any]] = []
     for item in items:
-        day_offset = _schedule_item_day_offset(item)
-        if day_offset >= days:
+        item_date = plan_date + timedelta(days=_schedule_item_day_offset(item))
+        if item_date < week_start or item_date > week_end:
             continue
+        day_offset = (item_date - week_start).days
         start = max(0, min(item.start_offset, day_length))
         end = max(start, min(item.end_offset, day_length))
-        block_date = plan_date + timedelta(days=day_offset)
         blocks.append(
             {
                 "day_offset": day_offset,
-                "date": block_date.strftime("%Y/%m/%d"),
-                "weekday": block_date.strftime("%a"),
+                "date": item_date.strftime("%Y/%m/%d"),
+                "weekday": item_date.strftime("%a"),
                 "top": start,
                 "height": max(8, end - start),
                 "time": (
@@ -700,14 +708,15 @@ def render_calendar_view(items: list[ScheduleItem], plan_input: DayPlanInput) ->
         f'<div class="calendar-hour" style="top:{offset * scale:.1f}px">{label}</div>'
         for offset, label in _calendar_hours(plan_input.day_start, plan_input.day_end)
     )
+    week_dates = calendar_week_dates(plan_input.date)
     day_headers = "\n".join(
         (
             '<div class="calendar-day-header">'
-            f'<div class="calendar-day-weekday">{escape((plan_input.date + timedelta(days=offset)).strftime("%a"))}</div>'
-            f'<div class="calendar-day-date">{escape(_date_label(plan_input.date, offset))}</div>'
+            f'<div class="calendar-day-weekday">{escape(day.strftime("%a"))}</div>'
+            f'<div class="calendar-day-date">{escape(day.strftime("%Y/%m/%d"))}</div>'
             "</div>"
         )
-        for offset in range(7)
+        for day in week_dates
     )
     day_lanes: list[str] = []
     for day_offset in range(7):
