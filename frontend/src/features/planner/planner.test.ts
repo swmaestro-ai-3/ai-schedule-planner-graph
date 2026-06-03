@@ -116,7 +116,7 @@ describe("planner frontend contracts", () => {
   it("labels the disconnected AI status pill as a connection action", () => {
     expect(aiStatusButtonLabel(false)).toBe("AI 미연결, 클릭해서 연결");
     expect(aiStatusButtonLabel(false, true)).toBe("AI 연결 확인 중");
-    expect(aiStatusButtonLabel(true)).toBe("AI 연결됨");
+    expect(aiStatusButtonLabel(true)).toBe("AI 연결됨, 클릭해서 상태 다시 확인");
   });
 
   it("labels the brand control as a start screen action", () => {

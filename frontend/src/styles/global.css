@@ -243,9 +243,9 @@ button:disabled {
   background: var(--success);
 }
 
-.status-pill.connected:disabled {
-  cursor: default;
-  opacity: 1;
+.status-pill.connected:hover {
+  border-color: #86efac;
+  background: #d1fae5;
 }
 
 .ghost-icon-button {

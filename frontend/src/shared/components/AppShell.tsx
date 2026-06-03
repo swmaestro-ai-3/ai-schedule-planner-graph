@@ -16,7 +16,7 @@ export const homeButtonLabel = "시작 화면으로 돌아가기";
 
 export function aiStatusButtonLabel(aiConnected: boolean, aiConnecting = false) {
   if (aiConnecting) return "AI 연결 확인 중";
-  return aiConnected ? "AI 연결됨" : "AI 미연결, 클릭해서 연결";
+  return aiConnected ? "AI 연결됨, 클릭해서 상태 다시 확인" : "AI 미연결, 클릭해서 연결";
 }
 
 export function AppShell({
@@ -69,7 +69,7 @@ export function AppShell({
             className={`status-pill ${aiConnected ? "connected" : ""}`}
             type="button"
             aria-label={aiStatusButtonLabel(aiConnected, aiConnecting)}
-            disabled={aiConnected || aiConnecting}
+            disabled={aiConnecting}
             onClick={onConnectAi}
           >
             <span />
