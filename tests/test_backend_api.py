@@ -492,7 +492,7 @@ def test_replan_response_can_answer_without_new_draft(monkeypatch):
 
     result = replan_response(
         {
-            "draft": draft,
+            "draft": {**draft, "replanCount": 3},
             "reason": "고정 일정을 침범했어?",
             "snoozeDays": 1,
         }

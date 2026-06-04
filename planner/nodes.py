@@ -10,7 +10,7 @@ from planner.llm_parser import (
     interpret_rejection_reason,
     parse_natural_language_input,
 )
-from planner.models import DraftPlan, FixedEvent, FreeBlock, Task
+from planner.models import DraftPlan, FixedEvent, FreeBlock, ReplanConstraints, Task
 from planner.scheduler import (
     classify_free_blocks,
     compute_free_blocks,
@@ -62,6 +62,26 @@ def _filtered_updates(values: dict[str, Any], allowed_fields: set[str]) -> dict[
     }
 
 
+def _has_replan_changes(constraints: ReplanConstraints) -> bool:
+    return any(
+        [
+            constraints.buffer_ratio_delta,
+            constraints.excluded_task_ids,
+            constraints.excluded_fixed_event_ids,
+            constraints.additional_tasks,
+            constraints.additional_fixed_events,
+            constraints.task_updates,
+            constraints.fixed_event_updates,
+            constraints.availability_overrides,
+            constraints.task_day_offsets,
+            constraints.preferred_windows,
+            constraints.duration_multipliers,
+            constraints.fixed_event_buffer_after,
+            constraints.snoozed_task_days,
+        ]
+    )
+
+
 def parse_input_node(state: PlannerState) -> PlannerState:
     if "parsed_input" in state:
         return {}
@@ -87,14 +107,19 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
         return {}
     if not state.get("rejection_reason"):
         return {}
-    if state.get("replan_count", 0) >= 3:
-        return {}
 
     constraints = interpret_rejection_reason(
         state.get("rejection_reason", ""),
         state,
         sidecar=call_llm_sidecar if state.get("use_llm_replan") else None,
     )
+    if state.get("replan_count", 0) >= 3:
+        if constraints.assistant_message and not _has_replan_changes(constraints):
+            return {
+                "replan_constraints": constraints,
+                "approval_status": "pending",
+            }
+        return {}
     updated_input = plan_input
 
     if constraints.buffer_ratio_delta:
