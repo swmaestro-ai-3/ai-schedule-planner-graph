@@ -34,4 +34,37 @@ describe("openai oauth sidecar prompt", () => {
     assert.match(text, /기획서 작성 내일로 미뤄줘/);
     assert.match(text, /그거 오후로 바꿔줘/);
   });
+
+  it("includes recent conversation context in parse requests before a draft exists", () => {
+    const request = buildResponseRequest(
+      {
+        task: "parse_day_plan",
+        prompt: "사용자의 자연어 일정을 DayPlanInput JSON으로만 구조화한다.",
+        input: "그럼 월요일 운동 1시간 넣어줘",
+        reference_date: "2026-06-01",
+        timezone: "Asia/Seoul",
+        conversation: [
+          { role: "user", text: "어떤 식으로 말하면 돼?" },
+          { role: "agent", text: "요일, 시간, 소요 시간을 알려주면 됩니다." },
+        ],
+        output_schema: {
+          type: "object",
+          required: [],
+          properties: {
+            day_plan: { type: "object" },
+            assistant_message: { type: "string" },
+          },
+        },
+      },
+      "gpt-test",
+    );
+
+    const text = request.input[0].content[0].text;
+
+    assert.match(text, /Conversation:/);
+    assert.match(text, /어떤 식으로 말하면 돼\?/);
+    assert.match(text, /요일, 시간, 소요 시간을 알려주면 됩니다/);
+    assert.match(text, /그럼 월요일 운동 1시간 넣어줘/);
+    assert.match(text, /assistant_message/);
+  });
 });
