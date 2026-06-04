@@ -168,6 +168,64 @@ def test_replan_response_limits_monday_availability_from_chat_feedback():
     assert "월요일" in replanned["lastFeedback"]
 
 
+def test_replan_response_can_add_new_task_from_ai_chat(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 60분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "프로젝트 회고도 1시간 추가해줘"
+        return {
+            "replan_constraints": {
+                "additional_tasks": [
+                    {
+                        "id": "task-retro",
+                        "title": "프로젝트 회고",
+                        "estimated_minutes": 60,
+                        "priority": 3,
+                        "splittable": True,
+                        "focus_type": "light",
+                    }
+                ],
+                "notes": ["새 작업 추가"],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "프로젝트 회고도 1시간 추가해줘",
+            "snoozeDays": 1,
+            "conversation": [
+                {"role": "user", "text": "기획서 작성도 넣어줘"},
+                {"role": "agent", "text": "초안을 준비했습니다."},
+                {"role": "user", "text": "프로젝트 회고도 1시간 추가해줘"},
+            ],
+        }
+    )
+
+    assert any(item["title"] == "프로젝트 회고" for item in replanned["items"])
+    assert any(
+        task["id"] == "task-retro" and task["title"] == "프로젝트 회고"
+        for task in replanned["backend"]["planInput"]["tasks"]
+    )
+
+
 def test_natural_plan_requires_openai_oauth_when_no_test_sidecar(monkeypatch):
     from backend import api
     from backend.api import OAuthRequiredError, create_plan_response

@@ -220,6 +220,55 @@ def test_rejected_input_can_snooze_task_to_next_day(monkeypatch):
     assert result["replan_constraints"].snoozed_task_days == {"task-1": 1}
 
 
+def test_rejected_input_can_add_new_task_from_ai_chat(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "프로젝트 회고도 1시간 추가해줘"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "additional_tasks": [
+                    {
+                        "id": "task-retro",
+                        "title": "프로젝트 회고",
+                        "estimated_minutes": 60,
+                        "priority": 3,
+                        "splittable": True,
+                        "focus_type": "light",
+                    }
+                ],
+                "notes": ["사용자가 프로젝트 회고 작업 추가를 요청했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    result = invoke_graph(
+        {
+            "parsed_input": make_valid_input(),
+            "approval_status": "rejected",
+            "rejection_reason": "프로젝트 회고도 1시간 추가해줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    added_task = next(
+        task for task in result["parsed_input"].tasks if task.id == "task-retro"
+    )
+    added_item = next(
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "task-retro"
+    )
+
+    assert added_task.title == "프로젝트 회고"
+    assert added_task.start_date == result["parsed_input"].date
+    assert added_task.end_date == result["parsed_input"].date
+    assert added_item.title == "프로젝트 회고"
+    assert result["replan_constraints"].additional_tasks[0].id == "task-retro"
+
+
 def test_rejected_input_can_apply_preferred_task_time(monkeypatch):
     def fake_sidecar(payload):
         assert payload["task"] == "interpret_rejection"

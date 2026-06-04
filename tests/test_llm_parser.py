@@ -351,6 +351,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     ]
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+    assert "additional_tasks" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "availability_overrides" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "task_day_offsets" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "duration_multipliers" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]

@@ -99,6 +99,23 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
             }
         )
 
+    if constraints.additional_tasks:
+        existing_ids = {task.id for task in updated_input.tasks}
+        additional_tasks = [
+            task.model_copy(
+                update={
+                    "start_date": task.start_date or updated_input.date,
+                    "end_date": task.end_date or updated_input.date,
+                }
+            )
+            for task in constraints.additional_tasks
+            if task.id not in existing_ids
+        ]
+        if additional_tasks:
+            updated_input = updated_input.model_copy(
+                update={"tasks": [*updated_input.tasks, *additional_tasks]}
+            )
+
     if constraints.availability_overrides:
         override_days = {
             window.day_offset for window in constraints.availability_overrides
