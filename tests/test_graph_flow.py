@@ -359,6 +359,83 @@ def test_rejected_input_can_remove_fixed_event_from_ai_chat(monkeypatch):
     assert result["replan_constraints"].excluded_fixed_event_ids == ["meeting"]
 
 
+def test_rejected_input_can_update_task_fields_from_ai_chat(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "코드 리뷰를 코드 리뷰 준비로 바꾸고 45분으로 수정해줘"
+        return {
+            "replan_constraints": {
+                "task_updates": {
+                    "task-1": {
+                        "title": "코드 리뷰 준비",
+                        "estimated_minutes": 45,
+                        "focus_type": "light",
+                    }
+                },
+                "notes": ["사용자가 작업 이름과 소요 시간을 수정했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    result = invoke_graph(
+        {
+            "parsed_input": make_valid_input().model_copy(update={"fixed_events": []}),
+            "approval_status": "rejected",
+            "rejection_reason": "코드 리뷰를 코드 리뷰 준비로 바꾸고 45분으로 수정해줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    updated_task = next(task for task in result["parsed_input"].tasks if task.id == "task-1")
+    updated_item = next(item for item in result["draft_plan"].schedule_items if item.source_id == "task-1")
+
+    assert updated_task.title == "코드 리뷰 준비"
+    assert updated_task.estimated_minutes == 45
+    assert updated_item.title == "코드 리뷰 준비"
+    assert updated_item.duration_minutes == 45
+    assert result["replan_constraints"].task_updates["task-1"]["estimated_minutes"] == 45
+
+
+def test_rejected_input_can_update_fixed_event_fields_from_ai_chat(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "회의를 짧은 회의로 바꾸고 11시부터 11시 30분으로 옮겨줘"
+        return {
+            "replan_constraints": {
+                "fixed_event_updates": {
+                    "meeting": {
+                        "title": "짧은 회의",
+                        "start_time": "11:00",
+                        "end_time": "11:30",
+                    }
+                },
+                "notes": ["사용자가 고정 일정 이름과 시간을 수정했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    result = invoke_graph(
+        {
+            "parsed_input": make_valid_input().model_copy(update={"day_end": time(18, 0)}),
+            "approval_status": "rejected",
+            "rejection_reason": "회의를 짧은 회의로 바꾸고 11시부터 11시 30분으로 옮겨줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    updated_event = next(event for event in result["parsed_input"].fixed_events if event.id == "meeting")
+    updated_item = next(item for item in result["draft_plan"].schedule_items if item.source_id == "meeting")
+
+    assert updated_event.title == "짧은 회의"
+    assert updated_event.start_time == time(11, 0)
+    assert updated_event.end_time == time(11, 30)
+    assert updated_item.title == "짧은 회의"
+    assert updated_item.start_offset == 120
+    assert result["replan_constraints"].fixed_event_updates["meeting"]["title"] == "짧은 회의"
+
+
 def test_rejected_input_can_apply_preferred_task_time(monkeypatch):
     def fake_sidecar(payload):
         assert payload["task"] == "interpret_rejection"

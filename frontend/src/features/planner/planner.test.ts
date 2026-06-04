@@ -6,6 +6,7 @@ import {
   homeButtonLabel,
 } from "../../shared/components/AppShell";
 import { mockPlannerApi } from "./api/plannerApi";
+import { defaultDraft } from "./data/mockDraft";
 import {
   agentBusyCopy,
   buildAgentReplanInput,
@@ -142,11 +143,32 @@ describe("planner frontend contracts", () => {
       tasks: [],
     });
 
-    expect(agentProposalSummary(draft)).toBe("고정 일정 1개, 작업 3개를 배치한 초안입니다.");
+    expect(agentProposalSummary(draft)).toBe("고정 일정 4개, 작업 3개를 배치한 초안입니다.");
     expect(agentPreviewItems(draft, 2)).toEqual([
       "월 09:00-10:00 팀 미팅",
       "월 10:30-12:30 기획서 작성",
     ]);
+  });
+
+  it("includes fixed schedule mock blocks that tasks do not overlap", () => {
+    const fixedItems = defaultDraft.items.filter((item) => item.type === "fixed");
+    const taskItems = defaultDraft.items.filter((item) => item.type === "task");
+    const overlaps = taskItems.flatMap((task) =>
+      fixedItems.filter(
+        (fixed) =>
+          fixed.dayIndex === task.dayIndex &&
+          fixed.start < task.end &&
+          task.start < fixed.end,
+      ),
+    );
+
+    expect(fixedItems.map((item) => item.title)).toEqual([
+      "팀 미팅",
+      "전공 수업",
+      "랩 세미나",
+      "멘토링",
+    ]);
+    expect(overlaps).toHaveLength(0);
   });
 
   it("previews only changed agent proposal items with before and after values", async () => {

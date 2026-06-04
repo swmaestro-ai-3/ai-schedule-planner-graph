@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Any
 
 from planner.explanations import build_rule_based_explanation
 from planner.llm_parser import (
@@ -9,7 +10,7 @@ from planner.llm_parser import (
     interpret_rejection_reason,
     parse_natural_language_input,
 )
-from planner.models import DraftPlan, FreeBlock
+from planner.models import DraftPlan, FixedEvent, FreeBlock, Task
 from planner.scheduler import (
     classify_free_blocks,
     compute_free_blocks,
@@ -25,6 +26,40 @@ from planner.validators import (
     validate_day_plan_input,
     validate_draft_plan,
 )
+
+
+TASK_UPDATE_FIELDS = {
+    "title",
+    "estimated_minutes",
+    "priority",
+    "start_date",
+    "end_date",
+    "deadline",
+    "splittable",
+    "min_chunk_minutes",
+    "focus_type",
+    "preferred_window",
+    "hard_deadline",
+}
+
+FIXED_EVENT_UPDATE_FIELDS = {
+    "title",
+    "day_offset",
+    "start_time",
+    "end_time",
+    "category",
+    "is_movable",
+    "buffer_before_minutes",
+    "buffer_after_minutes",
+}
+
+
+def _filtered_updates(values: dict[str, Any], allowed_fields: set[str]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in values.items()
+        if key in allowed_fields and value is not None
+    }
 
 
 def parse_input_node(state: PlannerState) -> PlannerState:
@@ -118,6 +153,27 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
                 }
             )
 
+    if constraints.fixed_event_updates:
+        event_updates = constraints.fixed_event_updates
+        updated_input = updated_input.model_copy(
+            update={
+                "fixed_events": [
+                    FixedEvent.model_validate(
+                        {
+                            **event.model_dump(),
+                            **_filtered_updates(
+                                event_updates.get(event.id, {}),
+                                FIXED_EVENT_UPDATE_FIELDS,
+                            ),
+                        }
+                    )
+                    if event.id in event_updates
+                    else event
+                    for event in updated_input.fixed_events
+                ]
+            }
+        )
+
     if constraints.excluded_task_ids:
         excluded = set(constraints.excluded_task_ids)
         updated_input = updated_input.model_copy(
@@ -144,6 +200,27 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
             updated_input = updated_input.model_copy(
                 update={"tasks": [*updated_input.tasks, *additional_tasks]}
             )
+
+    if constraints.task_updates:
+        task_updates = constraints.task_updates
+        updated_input = updated_input.model_copy(
+            update={
+                "tasks": [
+                    Task.model_validate(
+                        {
+                            **task.model_dump(),
+                            **_filtered_updates(
+                                task_updates.get(task.id, {}),
+                                TASK_UPDATE_FIELDS,
+                            ),
+                        }
+                    )
+                    if task.id in task_updates
+                    else task
+                    for task in updated_input.tasks
+                ]
+            }
+        )
 
     if constraints.availability_overrides:
         override_days = {

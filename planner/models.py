@@ -201,6 +201,8 @@ class ReplanConstraints(BaseModel):
     excluded_fixed_event_ids: list[str] = Field(default_factory=list)
     additional_tasks: list[Task] = Field(default_factory=list)
     additional_fixed_events: list[FixedEvent] = Field(default_factory=list)
+    task_updates: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    fixed_event_updates: dict[str, dict[str, Any]] = Field(default_factory=dict)
     availability_overrides: list[AvailabilityWindow] = Field(default_factory=list)
     task_day_offsets: dict[str, int] = Field(default_factory=dict)
     preferred_windows: dict[str, str] = Field(default_factory=dict)

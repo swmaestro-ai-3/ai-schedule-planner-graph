@@ -282,6 +282,61 @@ def test_replan_response_can_add_and_remove_fixed_events_from_ai_chat(monkeypatc
     )
 
 
+def test_replan_response_can_update_existing_items_from_ai_chat(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 60분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "팀 미팅은 10시로 옮기고 기획서는 90분으로 바꿔줘"
+        return {
+            "replan_constraints": {
+                "fixed_event_updates": {
+                    "fixed-1": {
+                        "start_time": "10:00",
+                        "end_time": "11:00",
+                    }
+                },
+                "task_updates": {
+                    "task-1": {
+                        "estimated_minutes": 90,
+                    }
+                },
+                "notes": ["기존 항목 수정"],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "팀 미팅은 10시로 옮기고 기획서는 90분으로 바꿔줘",
+            "snoozeDays": 1,
+        }
+    )
+
+    meeting = next(item for item in replanned["items"] if item["title"] == "팀 미팅")
+    task = next(item for item in replanned["items"] if item["title"] == "기획서 작성")
+
+    assert meeting["start"] == "10:00"
+    assert meeting["end"] == "11:00"
+    assert task["durationMinutes"] == 90
+
+
 def test_natural_plan_requires_openai_oauth_when_no_test_sidecar(monkeypatch):
     from backend import api
     from backend.api import OAuthRequiredError, create_plan_response
