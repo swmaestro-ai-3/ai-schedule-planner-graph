@@ -17,6 +17,7 @@ INTERPRET_REJECTION_PROMPT = """
 시간 계산과 일정 배치는 Python scheduler가 수행한다.
 input은 최신 사용자 요청이고 conversation은 최근 채팅 맥락이다. "그거", "아까", "방금 제안", "더 늦게"처럼 대명사나 생략이 있으면 conversation과 current_state의 task title/source_id/schedule_items를 함께 사용해 구체적인 task id와 제약으로 해석한다.
 conversation은 참고 맥락일 뿐이며, 최신 input과 충돌하면 최신 input을 우선한다.
+assistant_message는 사용자가 일정 변경이 아니라 설명/확인/질문을 요청할 때 사용하는 응답 문장이다. 이 경우 다른 변경 제약은 비워 둔다.
 buffer_ratio_delta는 여유 시간 증가 비율이다. 더 여유롭게 요청하면 0.1~0.3을 사용한다.
 fixed_event_buffer_after는 고정 일정 직후 휴식 시간(분)이다. 회의/수업 직후 쉬고 싶다는 요청은 최소 15를 사용한다.
 excluded_fixed_event_ids는 취소/삭제/빼기 요청된 고정 일정 id 목록이다.

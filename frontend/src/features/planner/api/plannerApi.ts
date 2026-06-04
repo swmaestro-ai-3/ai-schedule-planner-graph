@@ -1,5 +1,5 @@
 import { defaultDraft, reflectionDraft } from "../data/mockDraft";
-import type { CreatePlanInput, PlannerDraft, ReplanInput } from "../types/planner";
+import type { CreatePlanInput, PlannerDraft, PlannerMutationResult, ReplanInput } from "../types/planner";
 
 function cloneDraft(draft: PlannerDraft): PlannerDraft {
   return {
@@ -11,7 +11,7 @@ function cloneDraft(draft: PlannerDraft): PlannerDraft {
 
 export interface PlannerApi {
   createPlan(input: CreatePlanInput): Promise<PlannerDraft>;
-  replan(draft: PlannerDraft, input: ReplanInput): Promise<PlannerDraft>;
+  replan(draft: PlannerDraft, input: ReplanInput): Promise<PlannerMutationResult>;
   getOpenAIStatus(): Promise<OpenAIStatus>;
   connectOpenAI(): Promise<OpenAIConnectResult>;
 }
@@ -75,11 +75,15 @@ export function createHttpPlannerApi(options: HttpPlannerApiOptions = {}): Plann
     createPlan(input) {
       return postJson<PlannerDraft>(baseUrl, fetcher, "/api/plans", input);
     },
-    replan(draft, input) {
-      return postJson<PlannerDraft>(baseUrl, fetcher, "/api/replans", {
+    async replan(draft, input) {
+      const payload = await postJson<PlannerDraft | { agentMessage: string }>(baseUrl, fetcher, "/api/replans", {
         draft,
         ...input,
       });
+      if ("agentMessage" in payload) {
+        return { draft: null, agentMessage: payload.agentMessage };
+      }
+      return { draft: payload };
     },
     getOpenAIStatus() {
       return getJson<OpenAIStatus>(baseUrl, fetcher, "/api/openai/status");
@@ -112,6 +116,7 @@ export const mockPlannerApi: PlannerApi = {
     }
 
     return {
+      draft: {
       ...next,
       replanCount: next.replanCount + 1,
       lastFeedback: input.reason,
@@ -121,6 +126,7 @@ export const mockPlannerApi: PlannerApi = {
         { label: "여유", status: "ok", detail: "수정 후 유지" },
         { label: "변경", status: "warning", detail: "피드백 반영됨" },
       ],
+      },
     };
   },
 

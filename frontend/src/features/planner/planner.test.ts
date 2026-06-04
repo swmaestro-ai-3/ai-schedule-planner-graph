@@ -95,11 +95,11 @@ describe("planner frontend contracts", () => {
       snoozeTaskId: "task-plan",
       snoozeDays: 1,
     });
-    const after = next.items.find((item) => item.id === "task-plan");
+    const after = next.draft?.items.find((item) => item.id === "task-plan");
 
     expect(before?.dayIndex).toBe(0);
     expect(after?.dayIndex).toBe(1);
-    expect(next.replanCount).toBe(1);
+    expect(next.draft?.replanCount).toBe(1);
   });
 
   it("builds replan input with recent chat context", () => {

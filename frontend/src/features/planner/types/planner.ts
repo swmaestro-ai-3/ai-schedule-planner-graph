@@ -41,6 +41,11 @@ export interface PlannerDraft {
   };
 }
 
+export interface PlannerMutationResult {
+  draft: PlannerDraft | null;
+  agentMessage?: string;
+}
+
 export interface NaturalPlanInput {
   mode: "natural";
   text: string;

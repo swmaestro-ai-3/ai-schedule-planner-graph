@@ -61,7 +61,7 @@ describe("http planner api", () => {
       ],
     });
 
-    expect(result.replanCount).toBe(1);
+    expect(result.draft?.replanCount).toBe(1);
     expect(calls[0]).toEqual({
       url: "http://planner.test/api/replans",
       body: {
@@ -75,6 +75,29 @@ describe("http planner api", () => {
           { role: "user", text: "그거 오후로 바꿔줘" },
         ],
       },
+    });
+  });
+
+  it("normalizes message-only replan responses from the backend", async () => {
+    const api = createHttpPlannerApi({
+      baseUrl: "http://planner.test",
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            agentMessage: "아니요. 현재 작업은 고정 일정과 겹치지 않습니다.",
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const result = await api.replan(responseDraft, {
+      reason: "고정 일정을 침범했어?",
+      snoozeDays: 1,
+    });
+
+    expect(result).toEqual({
+      draft: null,
+      agentMessage: "아니요. 현재 작업은 고정 일정과 겹치지 않습니다.",
     });
   });
 

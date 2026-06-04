@@ -97,7 +97,7 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      return { draft: await httpPlannerApi.replan(baseDraft, input) };
+      return await httpPlannerApi.replan(baseDraft, input);
     } catch (exc) {
       const message = exc instanceof Error ? exc.message : "재배치 실패";
       setError(message);

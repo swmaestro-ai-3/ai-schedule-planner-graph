@@ -339,6 +339,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     ]
     assert "ReplanConstraints" in payload["prompt"]
     assert "conversation은 최근 채팅 맥락" in payload["prompt"]
+    assert "assistant_message" in payload["prompt"]
     assert payload["current_state"]["schedule_items"] == [
         {
             "type": "task",
@@ -350,6 +351,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
         }
     ]
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+    assert "assistant_message" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "excluded_fixed_event_ids" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "additional_fixed_events" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]

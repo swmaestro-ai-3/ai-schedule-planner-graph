@@ -337,6 +337,48 @@ def test_replan_response_can_update_existing_items_from_ai_chat(monkeypatch):
     assert task["durationMinutes"] == 90
 
 
+def test_replan_response_can_answer_without_new_draft(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 60분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "고정 일정을 침범했어?"
+        return {
+            "replan_constraints": {
+                "assistant_message": "아니요. 현재 작업은 팀 미팅 시간과 겹치지 않습니다.",
+                "notes": ["사용자가 현재 배치 상태를 질문했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    result = replan_response(
+        {
+            "draft": draft,
+            "reason": "고정 일정을 침범했어?",
+            "snoozeDays": 1,
+        }
+    )
+
+    assert result == {
+        "agentMessage": "아니요. 현재 작업은 팀 미팅 시간과 겹치지 않습니다.",
+    }
+
+
 def test_natural_plan_requires_openai_oauth_when_no_test_sidecar(monkeypatch):
     from backend import api
     from backend.api import OAuthRequiredError, create_plan_response

@@ -21,6 +21,7 @@ interface AgentChatProps {
 
 export interface AgentProposalResult {
   draft: PlannerDraft | null;
+  agentMessage?: string;
   error?: string;
 }
 
@@ -181,6 +182,7 @@ export function AgentChat({
         {
           role: "agent",
           text:
+            result.agentMessage ||
             result.error ||
             "초안을 만들지 못했습니다. 원하는 요일, 시간, 작업명을 조금 더 구체적으로 알려주세요.",
         },

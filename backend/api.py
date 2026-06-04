@@ -396,8 +396,31 @@ def replan_response(
             "use_llm_replan": use_llm_replan,
         }
     )
+    constraints = state.get("replan_constraints")
+    if constraints and constraints.assistant_message and _is_message_only_replan(constraints):
+        return {"agentMessage": constraints.assistant_message}
     return _planner_state_to_frontend(
         state=state,
         plan_input=state.get("parsed_input", plan_input),
         last_feedback=reason,
+    )
+
+
+def _is_message_only_replan(constraints: Any) -> bool:
+    return not any(
+        [
+            constraints.buffer_ratio_delta,
+            constraints.excluded_task_ids,
+            constraints.excluded_fixed_event_ids,
+            constraints.additional_tasks,
+            constraints.additional_fixed_events,
+            constraints.task_updates,
+            constraints.fixed_event_updates,
+            constraints.availability_overrides,
+            constraints.task_day_offsets,
+            constraints.preferred_windows,
+            constraints.duration_multipliers,
+            constraints.fixed_event_buffer_after,
+            constraints.snoozed_task_days,
+        ]
     )

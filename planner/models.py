@@ -196,6 +196,7 @@ class FinalPlanOutput(BaseModel):
 
 
 class ReplanConstraints(BaseModel):
+    assistant_message: str | None = None
     buffer_ratio_delta: float = 0.0
     excluded_task_ids: list[str] = Field(default_factory=list)
     excluded_fixed_event_ids: list[str] = Field(default_factory=list)
