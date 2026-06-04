@@ -624,9 +624,12 @@ def parse_natural_language_input(
             assistant_message = str(response.get("assistant_message") or "").strip()
             if assistant_message and "day_plan" not in response:
                 raise LLMAssistantMessage(assistant_message)
+            day_plan = response.get("day_plan", response)
+            if assistant_message and isinstance(day_plan, dict):
+                day_plan = {**day_plan, "assistant_message": assistant_message}
             return DayPlanInput.model_validate(
                 _apply_day_plan_defaults(
-                    response.get("day_plan", response),
+                    day_plan,
                     reference_date=reference_date,
                     raw_text=raw_text,
                 )

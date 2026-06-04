@@ -219,7 +219,7 @@ def _planner_state_to_frontend(
             }
         )
 
-    return {
+    response = {
         "weekStart": week_start.isoformat(),
         "weekLabel": _week_label(week_start),
         "reason": final_plan.explanation if final_plan else state.get("explanation", ""),
@@ -231,6 +231,9 @@ def _planner_state_to_frontend(
             "planInput": plan_input.model_dump(mode="json"),
         },
     }
+    if plan_input.assistant_message:
+        response["agentMessage"] = plan_input.assistant_message
+    return response
 
 
 def _full_week_availability(day_start: time, day_end: time) -> list[AvailabilityWindow]:

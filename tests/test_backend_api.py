@@ -84,6 +84,54 @@ def test_create_plan_response_passes_agent_conversation_to_parse_llm():
     assert result["agentMessage"] == "운동 일정을 월요일에 넣는 초안을 만들 수 있습니다."
 
 
+def test_create_plan_response_can_include_agent_message_with_draft():
+    from backend.api import create_plan_response
+
+    def fake_parse_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "assistant_message": "운동 루틴은 고정 일정으로 두고 나머지 작업과 겹치지 않게 초안을 만들었습니다.",
+            "day_plan": {
+                "date": "2026-06-01",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "fixed_events": [
+                    {
+                        "id": "event-workout",
+                        "title": "운동",
+                        "day_offset": 0,
+                        "start_time": "15:00",
+                        "end_time": "16:00",
+                    }
+                ],
+                "tasks": [
+                    {
+                        "id": "task-report",
+                        "title": "기획서 작성",
+                        "estimated_minutes": 120,
+                        "priority": 3,
+                        "splittable": True,
+                        "focus_type": "deep",
+                    }
+                ],
+            },
+        }
+
+    result = create_plan_response(
+        {
+            "mode": "natural",
+            "text": "월요일 15시에 운동 넣고 기획서도 2시간 배치해줘",
+            "bufferRatio": 15,
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=fake_parse_sidecar,
+    )
+
+    assert result["agentMessage"] == "운동 루틴은 고정 일정으로 두고 나머지 작업과 겹치지 않게 초안을 만들었습니다."
+    assert any(item["title"] == "운동" for item in result["items"])
+    assert any(item["title"] == "기획서 작성" for item in result["items"])
+
+
 def test_replan_response_applies_chat_snooze_to_existing_plan():
     from backend.api import create_plan_response, replan_response
 

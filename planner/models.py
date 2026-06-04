@@ -82,6 +82,7 @@ class Task(BaseModel):
 
 
 class DayPlanInput(BaseModel):
+    assistant_message: str | None = None
     date: date
     timezone: str = "Asia/Seoul"
     day_start: time

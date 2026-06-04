@@ -74,6 +74,31 @@ describe("http planner api", () => {
     });
   });
 
+  it("normalizes create draft responses that include an agent explanation", async () => {
+    const api = createHttpPlannerApi({
+      baseUrl: "http://planner.test",
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            ...responseDraft,
+            agentMessage: "운동 루틴은 고정 일정으로 두고 초안을 만들었습니다.",
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const result = await api.createPlan({
+      mode: "natural",
+      text: "월요일 15시에 운동 넣어줘",
+      bufferRatio: 15,
+    });
+
+    expect(result).toEqual({
+      draft: responseDraft,
+      agentMessage: "운동 루틴은 고정 일정으로 두고 초안을 만들었습니다.",
+    });
+  });
+
   it("posts current draft and chat feedback to the replan endpoint", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
     const api = createHttpPlannerApi({
