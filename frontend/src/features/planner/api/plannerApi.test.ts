@@ -114,6 +114,30 @@ describe("http planner api", () => {
     });
   });
 
+  it("normalizes draft responses that include an agent explanation", async () => {
+    const api = createHttpPlannerApi({
+      baseUrl: "http://planner.test",
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            ...responseDraft,
+            agentMessage: "고정 일정은 피해서 다시 배치했습니다.",
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const result = await api.replan(responseDraft, {
+      reason: "고정 일정 피해서 다시 배치해줘",
+      snoozeDays: 1,
+    });
+
+    expect(result).toEqual({
+      draft: responseDraft,
+      agentMessage: "고정 일정은 피해서 다시 배치했습니다.",
+    });
+  });
+
   it("normalizes message-only replan responses from the backend", async () => {
     const api = createHttpPlannerApi({
       baseUrl: "http://planner.test",

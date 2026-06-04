@@ -9,6 +9,7 @@ import { mockPlannerApi } from "./api/plannerApi";
 import { defaultDraft } from "./data/mockDraft";
 import {
   agentBusyCopy,
+  agentDraftResponseMessage,
   buildAgentCreateInput,
   buildAgentReplanInput,
   agentPreviewItems,
@@ -159,6 +160,15 @@ describe("planner frontend contracts", () => {
       title: "수정안을 쓰는 중",
       detail: "현재 제안과 피드백을 비교해서 반영 전 수정안을 준비하고 있습니다.",
     });
+  });
+
+  it("uses model draft response copy when a proposal includes an agent message", () => {
+    expect(agentDraftResponseMessage("고정 일정은 피해서 다시 배치했습니다.")).toBe(
+      "고정 일정은 피해서 다시 배치했습니다.",
+    );
+    expect(agentDraftResponseMessage()).toBe(
+      "초안을 준비했습니다. 아직 캘린더에는 반영하지 않았습니다. 확인 후 확정해 주세요.",
+    );
   });
 
   it("summarizes an agent proposal before it is committed to the calendar", async () => {

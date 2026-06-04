@@ -410,11 +410,14 @@ def replan_response(
     constraints = state.get("replan_constraints")
     if constraints and constraints.assistant_message and _is_message_only_replan(constraints):
         return {"agentMessage": constraints.assistant_message}
-    return _planner_state_to_frontend(
+    response = _planner_state_to_frontend(
         state=state,
         plan_input=state.get("parsed_input", plan_input),
         last_feedback=reason,
     )
+    if constraints and constraints.assistant_message:
+        response["agentMessage"] = constraints.assistant_message
+    return response
 
 
 def _is_message_only_replan(constraints: Any) -> bool:

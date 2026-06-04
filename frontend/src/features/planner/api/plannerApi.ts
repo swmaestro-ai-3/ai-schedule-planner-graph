@@ -79,20 +79,14 @@ export function createHttpPlannerApi(options: HttpPlannerApiOptions = {}): Plann
         "/api/plans",
         input,
       );
-      if ("agentMessage" in payload) {
-        return { draft: null, agentMessage: payload.agentMessage };
-      }
-      return { draft: payload };
+      return normalizePlannerMutation(payload);
     },
     async replan(draft, input) {
       const payload = await postJson<PlannerDraft | { agentMessage: string }>(baseUrl, fetcher, "/api/replans", {
         draft,
         ...input,
       });
-      if ("agentMessage" in payload) {
-        return { draft: null, agentMessage: payload.agentMessage };
-      }
-      return { draft: payload };
+      return normalizePlannerMutation(payload);
     },
     getOpenAIStatus() {
       return getJson<OpenAIStatus>(baseUrl, fetcher, "/api/openai/status");
@@ -104,6 +98,14 @@ export function createHttpPlannerApi(options: HttpPlannerApiOptions = {}): Plann
 }
 
 export const httpPlannerApi = createHttpPlannerApi();
+
+function normalizePlannerMutation(payload: PlannerDraft | { agentMessage: string }): PlannerMutationResult {
+  if ("weekStart" in payload) {
+    const { agentMessage, ...draft } = payload as PlannerDraft & { agentMessage?: string };
+    return { draft, agentMessage };
+  }
+  return { draft: null, agentMessage: payload.agentMessage };
+}
 
 export const mockPlannerApi: PlannerApi = {
   async createPlan(input) {

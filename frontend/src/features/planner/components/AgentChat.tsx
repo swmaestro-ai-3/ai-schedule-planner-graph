@@ -62,6 +62,13 @@ export function agentBusyCopy(hasDraft: boolean) {
   return hasDraft ? replanBusyCopy : createBusyCopy;
 }
 
+export function agentDraftResponseMessage(agentMessage?: string) {
+  return (
+    agentMessage ||
+    "초안을 준비했습니다. 아직 캘린더에는 반영하지 않았습니다. 확인 후 확정해 주세요."
+  );
+}
+
 export function buildAgentCreateInput(
   messages: AgentConversationMessage[],
   text: string,
@@ -208,7 +215,7 @@ export function AgentChat({
       ...current,
       {
         role: "agent",
-        text: "초안을 준비했습니다. 아직 캘린더에는 반영하지 않았습니다. 확인 후 확정해 주세요.",
+        text: agentDraftResponseMessage(result.agentMessage),
       },
     ]);
   };

@@ -392,6 +392,53 @@ def test_replan_response_can_update_existing_items_from_ai_chat(monkeypatch):
     assert task["durationMinutes"] == 90
 
 
+def test_replan_response_can_include_agent_message_with_draft(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 60분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "task_updates": {
+                    "task-1": {
+                        "estimated_minutes": 90,
+                    }
+                },
+                "assistant_message": "기획서 작성 시간을 90분으로 늘리고 고정 일정 뒤에 배치했습니다.",
+                "notes": ["기존 항목 수정 설명"],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "기획서 작성 시간을 늘려줘",
+            "snoozeDays": 1,
+        }
+    )
+
+    assert replanned["agentMessage"] == "기획서 작성 시간을 90분으로 늘리고 고정 일정 뒤에 배치했습니다."
+    assert next(item for item in replanned["items"] if item["title"] == "기획서 작성")[
+        "durationMinutes"
+    ] == 90
+
+
 def test_replan_response_can_answer_without_new_draft(monkeypatch):
     from backend import api
     from backend.api import create_plan_response, replan_response
