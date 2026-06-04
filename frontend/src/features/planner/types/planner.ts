@@ -50,6 +50,7 @@ export interface NaturalPlanInput {
   mode: "natural";
   text: string;
   bufferRatio: number;
+  conversation?: AgentConversationMessage[];
 }
 
 export interface StructuredPlanInput {

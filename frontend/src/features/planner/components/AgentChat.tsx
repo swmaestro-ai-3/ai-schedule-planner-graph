@@ -3,6 +3,7 @@ import { useState } from "react";
 import type {
   AgentConversationMessage,
   CreatePlanInput,
+  NaturalPlanInput,
   PlannerDraft,
   ReplanInput,
   ScheduleItem,
@@ -59,6 +60,18 @@ export function agentResetState() {
 
 export function agentBusyCopy(hasDraft: boolean) {
   return hasDraft ? replanBusyCopy : createBusyCopy;
+}
+
+export function buildAgentCreateInput(
+  messages: AgentConversationMessage[],
+  text: string,
+): NaturalPlanInput {
+  return {
+    mode: "natural",
+    text,
+    bufferRatio: 15,
+    conversation: [...messages, { role: "user", text }],
+  };
 }
 
 export function buildAgentReplanInput(
@@ -167,7 +180,7 @@ export function AgentChat({
     const baseDraft = pendingDraft ?? draft;
     const result = baseDraft
       ? await onReplanProposal(baseDraft, buildAgentReplanInput(messages, value))
-      : await onCreateProposal({ mode: "natural", text: value, bufferRatio: 15 });
+      : await onCreateProposal(buildAgentCreateInput(messages, value));
 
     const remainingDelay = Math.max(0, MIN_TYPING_MS - (Date.now() - startedAt));
     if (remainingDelay > 0) {

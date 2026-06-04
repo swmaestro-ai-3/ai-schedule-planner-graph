@@ -294,12 +294,20 @@ def test_day_plan_parse_payload_includes_prompt_schema_and_context():
         "6월 3일 9시부터 23시까지 과제 계획해줘",
         reference_date=date(2026, 6, 2),
         timezone="Asia/Seoul",
+        conversation=[
+            {"role": "agent", "text": "요일과 시간을 알려주세요."},
+            {"role": "user", "text": "그럼 내일 과제 2시간"},
+        ],
     )
 
     assert payload["task"] == "parse_day_plan"
     assert payload["input"] == "6월 3일 9시부터 23시까지 과제 계획해줘"
     assert payload["reference_date"] == "2026-06-02"
     assert payload["timezone"] == "Asia/Seoul"
+    assert payload["conversation"] == [
+        {"role": "agent", "text": "요일과 시간을 알려주세요."},
+        {"role": "user", "text": "그럼 내일 과제 2시간"},
+    ]
     assert "JSON만" in payload["prompt"]
     assert "assistant_message" in payload["prompt"]
     assert payload["output_schema"]["required"] == []

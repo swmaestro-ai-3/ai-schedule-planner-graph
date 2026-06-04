@@ -54,6 +54,36 @@ def test_create_plan_response_can_answer_without_draft_from_agent_chat(monkeypat
     }
 
 
+def test_create_plan_response_passes_agent_conversation_to_parse_llm():
+    from backend.api import create_plan_response
+
+    def fake_parse_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        assert payload["conversation"] == [
+            {"role": "agent", "text": "요일, 시간, 소요 시간을 알려주면 됩니다."},
+            {"role": "user", "text": "그럼 월요일 운동 1시간 넣어줘"},
+        ]
+        return {
+            "assistant_message": "운동 일정을 월요일에 넣는 초안을 만들 수 있습니다."
+        }
+
+    result = create_plan_response(
+        {
+            "mode": "natural",
+            "text": "그럼 월요일 운동 1시간 넣어줘",
+            "bufferRatio": 15,
+            "conversation": [
+                {"role": "agent", "text": "요일, 시간, 소요 시간을 알려주면 됩니다."},
+                {"role": "user", "text": "그럼 월요일 운동 1시간 넣어줘"},
+            ],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=fake_parse_sidecar,
+    )
+
+    assert result["agentMessage"] == "운동 일정을 월요일에 넣는 초안을 만들 수 있습니다."
+
+
 def test_replan_response_applies_chat_snooze_to_existing_plan():
     from backend.api import create_plan_response, replan_response
 

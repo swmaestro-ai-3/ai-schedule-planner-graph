@@ -453,11 +453,13 @@ def build_day_plan_parse_payload(
     *,
     reference_date: date | None = None,
     timezone: str = "Asia/Seoul",
+    conversation: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     return {
         "task": "parse_day_plan",
         "prompt": PARSE_DAY_PLAN_PROMPT,
         "input": raw_text,
+        "conversation": _summarize_conversation(conversation),
         "reference_date": (reference_date or date.today()).isoformat(),
         "timezone": timezone,
         "output_schema": {
@@ -606,6 +608,7 @@ def parse_natural_language_input(
     max_retries: int = 2,
     reference_date: date | None = None,
     timezone: str = "Asia/Seoul",
+    conversation: list[dict[str, str]] | None = None,
 ) -> DayPlanInput:
     last_error: Exception | None = None
     for _ in range(max_retries):
@@ -615,6 +618,7 @@ def parse_natural_language_input(
                     raw_text,
                     reference_date=reference_date,
                     timezone=timezone,
+                    conversation=conversation,
                 )
             )
             assistant_message = str(response.get("assistant_message") or "").strip()

@@ -27,13 +27,25 @@ describe("http planner api", () => {
       mode: "natural",
       text: "매일 회고 넣어줘",
       bufferRatio: 15,
+      conversation: [
+        { role: "agent", text: "요일, 시간, 소요 시간을 알려주세요." },
+        { role: "user", text: "매일 회고 넣어줘" },
+      ],
     });
 
     expect(result.draft?.reason).toBe("배치 완료");
     expect(calls).toEqual([
       {
         url: "http://planner.test/api/plans",
-        body: { mode: "natural", text: "매일 회고 넣어줘", bufferRatio: 15 },
+        body: {
+          mode: "natural",
+          text: "매일 회고 넣어줘",
+          bufferRatio: 15,
+          conversation: [
+            { role: "agent", text: "요일, 시간, 소요 시간을 알려주세요." },
+            { role: "user", text: "매일 회고 넣어줘" },
+          ],
+        },
       },
     ]);
   });

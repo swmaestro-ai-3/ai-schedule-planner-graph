@@ -9,6 +9,7 @@ import { mockPlannerApi } from "./api/plannerApi";
 import { defaultDraft } from "./data/mockDraft";
 import {
   agentBusyCopy,
+  buildAgentCreateInput,
   buildAgentReplanInput,
   agentPreviewItems,
   agentProposalChanges,
@@ -122,6 +123,29 @@ describe("planner frontend contracts", () => {
         { role: "user", text: "기획서 작성 내일로 미뤄줘" },
         { role: "agent", text: "초안을 준비했습니다." },
         { role: "user", text: "그거 오후로 바꿔줘" },
+      ],
+    });
+  });
+
+  it("builds natural create input with recent chat context", () => {
+    expect(
+      buildAgentCreateInput(
+        [
+          { role: "agent", text: "원하는 일정을 말해 주세요." },
+          { role: "user", text: "어떤 식으로 말하면 돼?" },
+          { role: "agent", text: "요일, 시간, 소요 시간을 알려주면 됩니다." },
+        ],
+        "그럼 월요일 운동 1시간 넣어줘",
+      ),
+    ).toEqual({
+      mode: "natural",
+      text: "그럼 월요일 운동 1시간 넣어줘",
+      bufferRatio: 15,
+      conversation: [
+        { role: "agent", text: "원하는 일정을 말해 주세요." },
+        { role: "user", text: "어떤 식으로 말하면 돼?" },
+        { role: "agent", text: "요일, 시간, 소요 시간을 알려주면 됩니다." },
+        { role: "user", text: "그럼 월요일 운동 1시간 넣어줘" },
       ],
     });
   });

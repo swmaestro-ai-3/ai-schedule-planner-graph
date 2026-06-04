@@ -324,6 +324,8 @@ def _plan_input_from_request(
     if request.get("mode") == "structured":
         return _structured_plan_input(request, reference_date)
     parser_kwargs: dict[str, Any] = {"reference_date": reference_date}
+    if request.get("conversation"):
+        parser_kwargs["conversation"] = request.get("conversation")
     if sidecar is not None:
         parser_kwargs["sidecar"] = sidecar
     else:
