@@ -89,6 +89,35 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
             }
         )
 
+    if constraints.excluded_fixed_event_ids:
+        excluded_events = set(constraints.excluded_fixed_event_ids)
+        updated_input = updated_input.model_copy(
+            update={
+                "fixed_events": [
+                    event
+                    for event in updated_input.fixed_events
+                    if event.id not in excluded_events
+                ]
+            }
+        )
+
+    if constraints.additional_fixed_events:
+        existing_event_ids = {event.id for event in updated_input.fixed_events}
+        additional_events = [
+            event
+            for event in constraints.additional_fixed_events
+            if event.id not in existing_event_ids
+        ]
+        if additional_events:
+            updated_input = updated_input.model_copy(
+                update={
+                    "fixed_events": [
+                        *updated_input.fixed_events,
+                        *additional_events,
+                    ]
+                }
+            )
+
     if constraints.excluded_task_ids:
         excluded = set(constraints.excluded_task_ids)
         updated_input = updated_input.model_copy(

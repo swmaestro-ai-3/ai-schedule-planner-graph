@@ -269,6 +269,96 @@ def test_rejected_input_can_add_new_task_from_ai_chat(monkeypatch):
     assert result["replan_constraints"].additional_tasks[0].id == "task-retro"
 
 
+def test_rejected_input_can_add_fixed_event_from_ai_chat(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "목요일 오후 3시에 병원 예약도 추가해줘"
+        return {
+            "replan_constraints": {
+                "additional_fixed_events": [
+                    {
+                        "id": "event-hospital",
+                        "title": "병원 예약",
+                        "day_offset": 3,
+                        "start_time": "15:00",
+                        "end_time": "16:00",
+                    }
+                ],
+                "notes": ["사용자가 병원 예약 고정 일정 추가를 요청했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    plan_input = make_valid_input().model_copy(
+        update={
+            "day_end": time(18, 0),
+            "availability_windows": [
+                AvailabilityWindow(
+                    id=f"available-{day_offset}",
+                    day_offset=day_offset,
+                    start_time=time(9, 0),
+                    end_time=time(18, 0),
+                )
+                for day_offset in range(7)
+            ],
+        }
+    )
+
+    result = invoke_graph(
+        {
+            "parsed_input": plan_input,
+            "approval_status": "rejected",
+            "rejection_reason": "목요일 오후 3시에 병원 예약도 추가해줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    added_event = next(
+        event
+        for event in result["parsed_input"].fixed_events
+        if event.id == "event-hospital"
+    )
+    added_item = next(
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "event-hospital"
+    )
+
+    assert added_event.title == "병원 예약"
+    assert added_event.day_offset == 3
+    assert added_event.start_time == time(15, 0)
+    assert added_item.title == "병원 예약"
+    assert result["replan_constraints"].additional_fixed_events[0].id == "event-hospital"
+
+
+def test_rejected_input_can_remove_fixed_event_from_ai_chat(monkeypatch):
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "회의는 취소됐으니 빼줘"
+        return {
+            "replan_constraints": {
+                "excluded_fixed_event_ids": ["meeting"],
+                "notes": ["사용자가 회의 고정 일정 삭제를 요청했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_sidecar)
+
+    result = invoke_graph(
+        {
+            "parsed_input": make_valid_input(),
+            "approval_status": "rejected",
+            "rejection_reason": "회의는 취소됐으니 빼줘",
+            "use_llm_replan": True,
+        }
+    )
+
+    assert all(event.id != "meeting" for event in result["parsed_input"].fixed_events)
+    assert all(item.source_id != "meeting" for item in result["draft_plan"].schedule_items)
+    assert result["replan_constraints"].excluded_fixed_event_ids == ["meeting"]
+
+
 def test_rejected_input_can_apply_preferred_task_time(monkeypatch):
     def fake_sidecar(payload):
         assert payload["task"] == "interpret_rejection"

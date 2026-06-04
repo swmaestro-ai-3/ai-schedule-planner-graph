@@ -226,6 +226,62 @@ def test_replan_response_can_add_new_task_from_ai_chat(monkeypatch):
     )
 
 
+def test_replan_response_can_add_and_remove_fixed_events_from_ai_chat(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 60분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        assert payload["input"] == "팀 미팅은 빼고 목요일 오후 3시에 병원 예약 추가해줘"
+        return {
+            "replan_constraints": {
+                "excluded_fixed_event_ids": ["fixed-1"],
+                "additional_fixed_events": [
+                    {
+                        "id": "event-hospital",
+                        "title": "병원 예약",
+                        "day_offset": 3,
+                        "start_time": "15:00",
+                        "end_time": "16:00",
+                    }
+                ],
+                "notes": ["고정 일정 편집"],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "팀 미팅은 빼고 목요일 오후 3시에 병원 예약 추가해줘",
+            "snoozeDays": 1,
+        }
+    )
+
+    assert all(item["title"] != "팀 미팅" for item in replanned["items"])
+    assert any(
+        item["title"] == "병원 예약"
+        and item["type"] == "fixed"
+        and item["dayIndex"] == 3
+        and item["start"] == "15:00"
+        for item in replanned["items"]
+    )
+
+
 def test_natural_plan_requires_openai_oauth_when_no_test_sidecar(monkeypatch):
     from backend import api
     from backend.api import OAuthRequiredError, create_plan_response
