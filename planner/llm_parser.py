@@ -516,11 +516,50 @@ def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
     return {
         "replan_count": state.get("replan_count", 0),
         "date": plan_input.date.isoformat() if plan_input else None,
+        "timezone": plan_input.timezone if plan_input else None,
+        "day_start": _time_text(getattr(plan_input, "day_start", None), time(9, 0))
+        if plan_input
+        else None,
+        "day_end": _time_text(getattr(plan_input, "day_end", None), time(23, 0))
+        if plan_input
+        else None,
+        "availability_windows": [
+            {
+                "id": window.id,
+                "day_offset": window.day_offset,
+                "start_time": _time_text(window.start_time, time(9, 0)),
+                "end_time": _time_text(window.end_time, time(18, 0)),
+            }
+            for window in (plan_input.availability_windows if plan_input else [])
+        ],
+        "fixed_events": [
+            {
+                "id": event.id,
+                "title": event.title,
+                "day_offset": event.day_offset,
+                "start_time": _time_text(event.start_time, time(9, 0)),
+                "end_time": _time_text(event.end_time, time(10, 0)),
+                "buffer_before_minutes": event.buffer_before_minutes,
+                "buffer_after_minutes": event.buffer_after_minutes,
+                "is_movable": event.is_movable,
+            }
+            for event in (plan_input.fixed_events if plan_input else [])
+        ],
         "tasks": [
             {
                 "id": task.id,
                 "title": task.title,
                 "estimated_minutes": task.estimated_minutes,
+                "priority": task.priority,
+                "start_date": task.start_date.isoformat() if task.start_date else None,
+                "end_date": task.end_date.isoformat() if task.end_date else None,
+                "deadline": (
+                    task.deadline.isoformat()
+                    if getattr(task.deadline, "isoformat", None)
+                    else None
+                ),
+                "splittable": task.splittable,
+                "focus_type": task.focus_type.value,
             }
             for task in (plan_input.tasks if plan_input else [])
         ],
@@ -534,12 +573,20 @@ def _summarize_schedule_items_for_rejection(
 ) -> list[dict[str, Any]]:
     draft_plan = state.get("draft_plan")
     if draft_plan:
+        day_start_minutes = _time_text_to_minutes(
+            getattr(plan_input, "day_start", None),
+            time(9, 0),
+        )
         return [
             {
                 "type": item.type.value,
                 "title": item.title,
                 "source_id": item.source_id,
                 "day_offset": item.day_offset,
+                "start_time": _minutes_to_time_text(
+                    day_start_minutes + item.start_offset
+                ),
+                "end_time": _minutes_to_time_text(day_start_minutes + item.end_offset),
                 "start_offset": item.start_offset,
                 "end_offset": item.end_offset,
             }

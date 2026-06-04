@@ -11,7 +11,15 @@ from planner.llm_parser import (
     interpret_rejection_reason,
     parse_natural_language_input,
 )
-from planner.models import DayPlanInput, DraftPlan, ScheduleItem, ScheduleItemType, ValidationIssue
+from planner.models import (
+    AvailabilityWindow,
+    DayPlanInput,
+    DraftPlan,
+    FixedEvent,
+    ScheduleItem,
+    ScheduleItemType,
+    ValidationIssue,
+)
 
 
 def test_fake_sidecar_output_becomes_day_plan_input():
@@ -357,6 +365,8 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
             "title": "기획서 작성",
             "source_id": "report",
             "day_offset": 3,
+            "start_time": "14:00",
+            "end_time": "16:00",
             "start_offset": 300,
             "end_offset": 420,
         }
@@ -372,6 +382,132 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     assert "availability_overrides" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "task_day_offsets" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "duration_multipliers" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+
+
+def test_rejection_interpretation_payload_includes_operational_calendar_context():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 1),
+        timezone="Asia/Seoul",
+        day_start=time(9, 0),
+        day_end=time(23, 59),
+        availability_windows=[
+            AvailabilityWindow(
+                id="available-0",
+                day_offset=0,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+            )
+        ],
+        fixed_events=[
+            FixedEvent(
+                id="meeting",
+                title="팀 미팅",
+                day_offset=0,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+                buffer_after_minutes=15,
+            )
+        ],
+        tasks=[
+            {
+                "id": "report",
+                "title": "기획서 작성",
+                "estimated_minutes": 120,
+                "priority": 5,
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-05",
+                "splittable": True,
+                "focus_type": "deep",
+            }
+        ],
+    )
+
+    payload = build_rejection_interpretation_payload(
+        "월요일 사용할 수 있는 시간이 1시간 밖에 없어. 일정을 옮겨줄래",
+        current_state={
+            "parsed_input": plan_input,
+            "frontend_schedule_items": [
+                {
+                    "id": "meeting",
+                    "type": "fixed",
+                    "title": "팀 미팅",
+                    "dayIndex": 0,
+                    "start": "09:00",
+                    "end": "10:00",
+                },
+                {
+                    "id": "report",
+                    "type": "task",
+                    "title": "기획서 작성",
+                    "dayIndex": 0,
+                    "start": "10:00",
+                    "end": "12:00",
+                },
+            ],
+        },
+    )
+
+    current_state = payload["current_state"]
+    assert current_state["date"] == "2026-06-01"
+    assert current_state["timezone"] == "Asia/Seoul"
+    assert current_state["day_start"] == "09:00"
+    assert current_state["day_end"] == "23:59"
+    assert current_state["availability_windows"] == [
+        {
+            "id": "available-0",
+            "day_offset": 0,
+            "start_time": "09:00",
+            "end_time": "10:00",
+        }
+    ]
+    assert current_state["fixed_events"] == [
+        {
+            "id": "meeting",
+            "title": "팀 미팅",
+            "day_offset": 0,
+            "start_time": "09:00",
+            "end_time": "10:00",
+            "buffer_before_minutes": 0,
+            "buffer_after_minutes": 15,
+            "is_movable": False,
+        }
+    ]
+    assert current_state["tasks"] == [
+        {
+            "id": "report",
+            "title": "기획서 작성",
+            "estimated_minutes": 120,
+            "priority": 5,
+            "start_date": "2026-06-01",
+            "end_date": "2026-06-05",
+            "deadline": None,
+            "splittable": True,
+            "focus_type": "deep",
+        }
+    ]
+    assert current_state["schedule_items"] == [
+        {
+            "type": "fixed",
+            "title": "팀 미팅",
+            "source_id": "meeting",
+            "day_offset": 0,
+            "start_time": "09:00",
+            "end_time": "10:00",
+            "start_offset": 0,
+            "end_offset": 60,
+        },
+        {
+            "type": "task",
+            "title": "기획서 작성",
+            "source_id": "report",
+            "day_offset": 0,
+            "start_time": "10:00",
+            "end_time": "12:00",
+            "start_offset": 60,
+            "end_offset": 180,
+        },
+    ]
+    assert "현재 일정/가용시간/고정일정" in payload["prompt"]
 
 
 def test_ai_rejection_interpreter_can_use_sidecar_response():
