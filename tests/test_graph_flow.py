@@ -289,6 +289,65 @@ def test_rejected_input_can_apply_task_duration_multiplier():
     assert task_items[0].duration_minutes == 90
 
 
+def test_rejected_input_can_limit_day_availability_and_move_tasks():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 1),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        availability_windows=[
+            AvailabilityWindow(
+                id=f"available-{day_offset}",
+                day_offset=day_offset,
+                start_time=time(9, 0),
+                end_time=time(18, 0),
+            )
+            for day_offset in range(7)
+        ],
+        fixed_events=[
+            FixedEvent(
+                id="meeting",
+                title="팀 미팅",
+                day_offset=0,
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+            )
+        ],
+        tasks=[
+            Task(
+                id="task-plan",
+                title="기획서 작성",
+                estimated_minutes=120,
+                splittable=False,
+            ),
+            Task(
+                id="task-study",
+                title="개발 공부",
+                estimated_minutes=120,
+                splittable=False,
+            ),
+        ],
+        buffer_ratio=0,
+    )
+
+    result = invoke_graph(
+        {
+            "parsed_input": plan_input,
+            "approval_status": "rejected",
+            "rejection_reason": "월요일 사용할 수 있는 시간이 1시간 밖에 없어. 일정을 옮겨줄래",
+        }
+    )
+
+    task_items = [
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id in {"task-plan", "task-study"}
+    ]
+
+    assert result["replan_constraints"].availability_overrides[0].day_offset == 0
+    assert result["parsed_input"].availability_windows[0].end_time == time(10, 0)
+    assert all(item.day_offset != 0 for item in task_items)
+
+
 def test_replan_limit_stops_automatic_replanning():
     result = invoke_graph(
         {

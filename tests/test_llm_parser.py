@@ -316,6 +316,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     assert "ReplanConstraints" in payload["prompt"]
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+    assert "availability_overrides" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "duration_multipliers" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
 
 
@@ -485,6 +486,78 @@ def test_rejection_reason_extracts_task_duration_multiplier_by_title():
     )
 
     assert constraints.duration_multipliers == {"report": 3.0}
+
+
+def test_rejection_reason_extracts_day_availability_limit():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 1),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[
+            {
+                "id": "report",
+                "title": "기획서 작성",
+                "estimated_minutes": 120,
+                "splittable": False,
+            }
+        ],
+    )
+
+    constraints = interpret_rejection_reason(
+        "월요일 사용할 수 있는 시간이 1시간 밖에 없어. 일정을 옮겨줄래",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert [window.model_dump() for window in constraints.availability_overrides] == [
+        {
+            "id": "override-available-0",
+            "day_offset": 0,
+            "start_time": time(9, 0),
+            "end_time": time(10, 0),
+        }
+    ]
+
+
+def test_ai_rejection_interpreter_can_return_availability_override():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 1),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[],
+    )
+
+    def fake_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "buffer_ratio_delta": 0,
+                "excluded_task_ids": [],
+                "availability_overrides": [
+                    {
+                        "id": "llm-available-0",
+                        "day_offset": 0,
+                        "start_time": "09:00",
+                        "end_time": "10:00",
+                    }
+                ],
+                "preferred_windows": {},
+                "duration_multipliers": {},
+                "fixed_event_buffer_after": 0,
+                "snoozed_task_days": {},
+                "notes": ["월요일 가용 시간이 1시간입니다."],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "월요일 일정 좀 줄여줘",
+        current_state={"parsed_input": plan_input},
+        sidecar=fake_sidecar,
+    )
+
+    assert constraints.availability_overrides[0].day_offset == 0
+    assert constraints.availability_overrides[0].end_time == time(10, 0)
 
 
 def test_machine_readable_duration_multiplier_overrides_sidecar_omission():

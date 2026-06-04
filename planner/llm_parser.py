@@ -10,7 +10,12 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from planner.models import DayPlanInput, ReplanConstraints, ValidationIssue
+from planner.models import (
+    AvailabilityWindow,
+    DayPlanInput,
+    ReplanConstraints,
+    ValidationIssue,
+)
 from planner.prompts import INTERPRET_REJECTION_PROMPT, PARSE_DAY_PLAN_PROMPT
 
 
@@ -223,7 +228,7 @@ def _extract_day_offsets(raw_text: str, reference_date: date) -> list[int] | Non
             return offsets
 
     weekday_names = re.findall(r"([월화수목금토일])요일", raw_text)
-    if len(weekday_names) > 1:
+    if weekday_names:
         return _unique_offsets([WEEKDAY_INDEXES[name] for name in weekday_names])
 
     if "매일" in raw_text:
@@ -719,6 +724,75 @@ def _extract_duration_multipliers(
     }
 
 
+def _availability_update_requested(reason: str) -> bool:
+    return any(
+        marker in reason
+        for marker in (
+            "가능",
+            "가용",
+            "사용할 수",
+            "쓸 수",
+            "시간 밖에",
+            "시간밖에",
+            "비어",
+            "빈 시간",
+        )
+    )
+
+
+def _extract_availability_overrides(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> list[AvailabilityWindow]:
+    if not _availability_update_requested(reason):
+        return []
+    plan_input = (current_state or {}).get("parsed_input")
+    if not isinstance(plan_input, DayPlanInput):
+        return []
+
+    day_offsets = _extract_day_offsets(reason, plan_input.date)
+    if not day_offsets:
+        return []
+
+    explicit_windows = _extract_explicit_availability_windows(
+        reason,
+        reference_date=plan_input.date,
+    )
+    if explicit_windows is not None:
+        return [
+            AvailabilityWindow.model_validate(
+                {
+                    **window,
+                    "id": f"override-available-{window['day_offset']}",
+                }
+            )
+            for window in explicit_windows
+        ]
+
+    duration_minutes = _parse_duration_minutes(reason, default_minutes=0)
+    if duration_minutes <= 0:
+        return []
+
+    preferred_start = _find_first_korean_time(reason)
+    day_start_minutes = _time_text_to_minutes(plan_input.day_start, time(9, 0))
+    day_end_minutes = _time_text_to_minutes(plan_input.day_end, time(18, 0))
+    start_minutes = preferred_start[0] if preferred_start is not None else day_start_minutes
+    start_minutes = max(day_start_minutes, min(start_minutes, day_end_minutes))
+    end_minutes = min(start_minutes + duration_minutes, day_end_minutes)
+    if end_minutes <= start_minutes:
+        return []
+
+    return [
+        AvailabilityWindow(
+            id=f"override-available-{day_offset}",
+            day_offset=day_offset,
+            start_time=time(start_minutes // 60, start_minutes % 60),
+            end_time=time(end_minutes // 60, end_minutes % 60),
+        )
+        for day_offset in day_offsets
+    ]
+
+
 def _interpret_rejection_reason_with_rules(
     reason: str,
     current_state: dict[str, Any] | None = None,
@@ -748,6 +822,9 @@ def _interpret_rejection_reason_with_rules(
     constraints.duration_multipliers.update(
         _extract_duration_multipliers(reason, current_state)
     )
+    constraints.availability_overrides.extend(
+        _extract_availability_overrides(reason, current_state)
+    )
     return constraints
 
 
@@ -765,6 +842,22 @@ def _normalize_duration_multipliers(values: dict[str, float]) -> dict[str, float
         for task_id, multiplier in values.items()
         if task_id and float(multiplier) > 0
     }
+
+
+def _normalize_availability_overrides(
+    values: list[AvailabilityWindow],
+) -> list[AvailabilityWindow]:
+    normalized_by_day: dict[int, AvailabilityWindow] = {}
+    for window in values:
+        if window.end_time <= window.start_time:
+            continue
+        normalized_by_day[window.day_offset] = window.model_copy(
+            update={"id": window.id or f"override-available-{window.day_offset}"}
+        )
+    return [
+        normalized_by_day[day_offset]
+        for day_offset in sorted(normalized_by_day)
+    ]
 
 
 def _normalize_replan_constraints(
@@ -785,6 +878,11 @@ def _normalize_replan_constraints(
     )
     if normalized_multipliers != constraints.duration_multipliers:
         updates["duration_multipliers"] = normalized_multipliers
+    normalized_availability = _normalize_availability_overrides(
+        constraints.availability_overrides
+    )
+    if normalized_availability != constraints.availability_overrides:
+        updates["availability_overrides"] = normalized_availability
     if updates:
         return constraints.model_copy(update=updates)
     return constraints
@@ -817,6 +915,20 @@ def _merge_rule_constraints(
             **constraints.duration_multipliers,
             **rule_constraints.duration_multipliers,
         }
+    if rule_constraints.availability_overrides:
+        merged_by_day = {
+            window.day_offset: window for window in constraints.availability_overrides
+        }
+        merged_by_day.update(
+            {
+                window.day_offset: window
+                for window in rule_constraints.availability_overrides
+            }
+        )
+        updates["availability_overrides"] = [
+            merged_by_day[day_offset]
+            for day_offset in sorted(merged_by_day)
+        ]
 
     if not updates:
         return constraints

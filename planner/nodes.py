@@ -97,6 +97,24 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
             }
         )
 
+    if constraints.availability_overrides:
+        override_days = {
+            window.day_offset for window in constraints.availability_overrides
+        }
+        updated_input = updated_input.model_copy(
+            update={
+                "availability_windows": sorted(
+                    [
+                        window
+                        for window in updated_input.availability_windows
+                        if window.day_offset not in override_days
+                    ]
+                    + constraints.availability_overrides,
+                    key=lambda window: (window.day_offset, window.start_time),
+                )
+            }
+        )
+
     if constraints.duration_multipliers:
         multipliers = constraints.duration_multipliers
         updated_input = updated_input.model_copy(

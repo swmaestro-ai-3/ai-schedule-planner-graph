@@ -136,6 +136,38 @@ def test_replan_response_keeps_prior_chat_feedback_when_duration_changes():
     assert "3배" in resized["lastFeedback"]
 
 
+def test_replan_response_limits_monday_availability_from_chat_feedback():
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "structured",
+            "bufferRatio": 0,
+            "fixedEvents": ["월 09:00 팀 미팅"],
+            "tasks": ["기획서 작성 120분", "코드 리뷰 90분", "개발 공부 120분"],
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=failing_sidecar,
+    )
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "월요일 사용할 수 있는 시간이 1시간 밖에 없어. 일정을 옮겨줄래",
+            "snoozeDays": 1,
+        },
+        sidecar=failing_sidecar,
+    )
+    monday_items = [item for item in replanned["items"] if item["dayIndex"] == 0]
+    task_items = [item for item in replanned["items"] if item["type"] == "task"]
+
+    assert [(item["start"], item["end"], item["title"]) for item in monday_items] == [
+        ("09:00", "10:00", "팀 미팅")
+    ]
+    assert all(item["dayIndex"] != 0 for item in task_items)
+    assert "월요일" in replanned["lastFeedback"]
+
+
 def test_natural_plan_requires_openai_oauth_when_no_test_sidecar(monkeypatch):
     from backend import api
     from backend.api import OAuthRequiredError, create_plan_response

@@ -198,6 +198,7 @@ class FinalPlanOutput(BaseModel):
 class ReplanConstraints(BaseModel):
     buffer_ratio_delta: float = 0.0
     excluded_task_ids: list[str] = Field(default_factory=list)
+    availability_overrides: list[AvailabilityWindow] = Field(default_factory=list)
     preferred_windows: dict[str, str] = Field(default_factory=dict)
     duration_multipliers: dict[str, float] = Field(default_factory=dict)
     fixed_event_buffer_after: int = 0
