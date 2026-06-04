@@ -54,7 +54,13 @@ export function agentBusyCopy(hasDraft: boolean) {
   return hasDraft ? replanBusyCopy : createBusyCopy;
 }
 
-export function agentProposalSummary(draft: PlannerDraft) {
+export function agentProposalSummary(draft: PlannerDraft, previousDraft?: PlannerDraft | null) {
+  if (previousDraft) {
+    const changeCount = agentProposalChanges(previousDraft, draft, Number.POSITIVE_INFINITY).length;
+    if (changeCount > 0) {
+      return `${changeCount}개 일정이 변경된 초안입니다.`;
+    }
+  }
   const fixedCount = draft.items.filter((item) => item.type === "fixed").length;
   const taskCount = draft.items.filter((item) => item.type === "task").length;
   return `고정 일정 ${fixedCount}개, 작업 ${taskCount}개를 배치한 초안입니다.`;
@@ -65,8 +71,37 @@ export function agentPreviewItems(draft: PlannerDraft, limit = 3) {
 }
 
 function formatPreviewItem(item: ScheduleItem) {
+  return `${formatPreviewTime(item)} ${item.title}`;
+}
+
+function formatPreviewTime(item: ScheduleItem) {
   const dayLabels = ["월", "화", "수", "목", "금", "토", "일"];
-  return `${dayLabels[item.dayIndex] ?? "일정"} ${item.start}-${item.end} ${item.title}`;
+  return `${dayLabels[item.dayIndex] ?? "일정"} ${item.start}-${item.end}`;
+}
+
+export function agentProposalChanges(
+  previousDraft: PlannerDraft,
+  nextDraft: PlannerDraft,
+  limit = 4,
+) {
+  const previousItems = new Map(previousDraft.items.map((item) => [item.id, item]));
+  const changes: string[] = [];
+  for (const item of nextDraft.items) {
+    const previous = previousItems.get(item.id);
+    if (!previous) {
+      changes.push(`추가: ${formatPreviewItem(item)}`);
+      continue;
+    }
+    const changed =
+      previous.dayIndex !== item.dayIndex ||
+      previous.start !== item.start ||
+      previous.end !== item.end ||
+      previous.title !== item.title;
+    if (changed) {
+      changes.push(`${item.title}: ${formatPreviewTime(previous)} -> ${formatPreviewTime(item)}`);
+    }
+  }
+  return changes.slice(0, limit);
 }
 
 function wait(ms: number) {
@@ -95,6 +130,12 @@ export function AgentChat({
   const isWorking = busy || typing;
   const taskCount = workingDraft?.items.filter((item) => item.type === "task").length ?? 0;
   const busyCopy = agentBusyCopy(hasWorkingDraft);
+  const proposalLines =
+    pendingDraft && draft
+      ? agentProposalChanges(draft, pendingDraft)
+      : pendingDraft
+        ? agentPreviewItems(pendingDraft)
+        : [];
 
   const submit = async () => {
     const value = text.trim();
@@ -215,10 +256,10 @@ export function AgentChat({
             <article className="agent-proposal" aria-label="반영 전 일정 초안">
               <div>
                 <span>반영 전 초안</span>
-                <strong>{agentProposalSummary(pendingDraft)}</strong>
+                <strong>{agentProposalSummary(pendingDraft, draft)}</strong>
               </div>
               <ul>
-                {agentPreviewItems(pendingDraft).map((item) => (
+                {proposalLines.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>

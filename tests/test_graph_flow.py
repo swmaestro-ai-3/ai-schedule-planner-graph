@@ -261,6 +261,55 @@ def test_rejected_input_can_apply_preferred_task_time(monkeypatch):
     assert result["replan_constraints"].preferred_windows == {"task-1": "11:00"}
 
 
+def test_rejected_input_can_move_task_to_target_day_and_time():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 1),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        availability_windows=[
+            AvailabilityWindow(
+                id=f"available-{day_offset}",
+                day_offset=day_offset,
+                start_time=time(9, 0),
+                end_time=time(18, 0),
+            )
+            for day_offset in range(7)
+        ],
+        fixed_events=[],
+        tasks=[
+            Task(
+                id="task-plan",
+                title="기획서 작성",
+                estimated_minutes=120,
+                splittable=False,
+            )
+        ],
+        buffer_ratio=0,
+    )
+
+    result = invoke_graph(
+        {
+            "parsed_input": plan_input,
+            "approval_status": "rejected",
+            "rejection_reason": "기획서 작성을 목요일 오후 2시로 옮겨줘",
+        }
+    )
+
+    task_item = next(
+        item
+        for item in result["draft_plan"].schedule_items
+        if item.source_id == "task-plan"
+    )
+    task = next(task for task in result["parsed_input"].tasks if task.id == "task-plan")
+
+    assert result["replan_constraints"].task_day_offsets == {"task-plan": 3}
+    assert result["replan_constraints"].preferred_windows == {"task-plan": "14:00"}
+    assert task.start_date == date(2026, 6, 4)
+    assert task.end_date == date(2026, 6, 4)
+    assert task_item.day_offset == 3
+    assert task_item.start_offset == 300
+
+
 def test_rejected_input_can_apply_task_duration_multiplier():
     plan_input = make_valid_input().model_copy(
         update={

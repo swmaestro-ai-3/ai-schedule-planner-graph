@@ -9,6 +9,7 @@ import { mockPlannerApi } from "./api/plannerApi";
 import {
   agentBusyCopy,
   agentPreviewItems,
+  agentProposalChanges,
   agentProposalSummary,
   agentResetButtonLabel,
   agentResetState,
@@ -122,6 +123,28 @@ describe("planner frontend contracts", () => {
     expect(agentPreviewItems(draft, 2)).toEqual([
       "월 09:00-10:00 팀 미팅",
       "월 10:30-12:30 기획서 작성",
+    ]);
+  });
+
+  it("previews only changed agent proposal items with before and after values", async () => {
+    const draft = await mockPlannerApi.createPlan({
+      mode: "structured",
+      bufferRatio: 15,
+      fixedEvents: [],
+      tasks: [],
+    });
+    const next = {
+      ...draft,
+      items: draft.items.map((item) =>
+        item.id === "task-plan"
+          ? { ...item, dayIndex: 3, start: "14:00", end: "16:00" }
+          : item,
+      ),
+    };
+
+    expect(agentProposalSummary(next, draft)).toBe("1개 일정이 변경된 초안입니다.");
+    expect(agentProposalChanges(draft, next)).toEqual([
+      "기획서 작성: 월 10:30-12:30 -> 목 14:00-16:00",
     ]);
   });
 

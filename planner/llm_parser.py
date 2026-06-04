@@ -677,6 +677,31 @@ def _extract_preferred_time(reason: str) -> str | None:
     return _minutes_to_time_text(start_minutes)
 
 
+def _task_day_move_requested(reason: str) -> bool:
+    return any(
+        marker in reason
+        for marker in ("옮겨", "이동", "변경", "바꿔", "수정")
+    )
+
+
+def _extract_task_day_offsets(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> dict[str, int]:
+    if not _task_day_move_requested(reason):
+        return {}
+    plan_input = (current_state or {}).get("parsed_input")
+    if not isinstance(plan_input, DayPlanInput):
+        return {}
+    day_offsets = _extract_day_offsets(reason, plan_input.date)
+    if not day_offsets or len(day_offsets) != 1:
+        return {}
+    return {
+        task_id: day_offsets[0]
+        for task_id in _matching_task_ids_from_reason(reason, current_state)
+    }
+
+
 def _extract_duration_multiplier(reason: str) -> float | None:
     if "절반" in reason or "반으로" in reason:
         return 0.5
@@ -819,6 +844,9 @@ def _interpret_rejection_reason_with_rules(
     if preferred_time is not None:
         for task_id in _matching_task_ids_from_reason(reason, current_state):
             constraints.preferred_windows[task_id] = preferred_time
+    constraints.task_day_offsets.update(
+        _extract_task_day_offsets(reason, current_state)
+    )
     constraints.duration_multipliers.update(
         _extract_duration_multipliers(reason, current_state)
     )
@@ -833,6 +861,14 @@ def _normalize_snoozed_task_days(values: dict[str, int]) -> dict[str, int]:
         str(task_id): max(1, min(int(days), 6))
         for task_id, days in values.items()
         if task_id and int(days) > 0
+    }
+
+
+def _normalize_task_day_offsets(values: dict[str, int]) -> dict[str, int]:
+    return {
+        str(task_id): max(0, min(int(day_offset), 6))
+        for task_id, day_offset in values.items()
+        if task_id
     }
 
 
@@ -873,6 +909,9 @@ def _normalize_replan_constraints(
     normalized_snoozes = _normalize_snoozed_task_days(constraints.snoozed_task_days)
     if normalized_snoozes != constraints.snoozed_task_days:
         updates["snoozed_task_days"] = normalized_snoozes
+    normalized_task_days = _normalize_task_day_offsets(constraints.task_day_offsets)
+    if normalized_task_days != constraints.task_day_offsets:
+        updates["task_day_offsets"] = normalized_task_days
     normalized_multipliers = _normalize_duration_multipliers(
         constraints.duration_multipliers
     )
@@ -909,6 +948,11 @@ def _merge_rule_constraints(
         updates["preferred_windows"] = {
             **constraints.preferred_windows,
             **rule_constraints.preferred_windows,
+        }
+    if rule_constraints.task_day_offsets:
+        updates["task_day_offsets"] = {
+            **constraints.task_day_offsets,
+            **rule_constraints.task_day_offsets,
         }
     if rule_constraints.duration_multipliers:
         updates["duration_multipliers"] = {

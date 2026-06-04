@@ -317,6 +317,7 @@ def test_rejection_interpretation_payload_asks_for_replan_constraints():
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "availability_overrides" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
+    assert "task_day_offsets" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "duration_multipliers" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
 
 
@@ -462,6 +463,31 @@ def test_rejection_reason_extracts_preferred_task_time_by_title():
     )
 
     assert constraints.preferred_windows == {"report": "16:00"}
+
+
+def test_rejection_reason_extracts_task_day_and_time_move_by_title():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 1),
+        day_start=time(9, 0),
+        day_end=time(18, 0),
+        fixed_events=[],
+        tasks=[
+            {
+                "id": "report",
+                "title": "기획서 작성",
+                "estimated_minutes": 120,
+                "splittable": False,
+            }
+        ],
+    )
+
+    constraints = interpret_rejection_reason(
+        "기획서 작성을 목요일 오후 2시로 옮겨줘",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert constraints.task_day_offsets == {"report": 3}
+    assert constraints.preferred_windows == {"report": "14:00"}
 
 
 def test_rejection_reason_extracts_task_duration_multiplier_by_title():

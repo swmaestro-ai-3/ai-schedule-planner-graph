@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 from planner.explanations import build_rule_based_explanation
 from planner.llm_parser import (
     build_clarification_questions,
@@ -112,6 +114,26 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
                     + constraints.availability_overrides,
                     key=lambda window: (window.day_offset, window.start_time),
                 )
+            }
+        )
+
+    if constraints.task_day_offsets:
+        day_offsets = constraints.task_day_offsets
+        updated_input = updated_input.model_copy(
+            update={
+                "tasks": [
+                    task.model_copy(
+                        update={
+                            "start_date": updated_input.date
+                            + timedelta(days=day_offsets[task.id]),
+                            "end_date": updated_input.date
+                            + timedelta(days=day_offsets[task.id]),
+                        }
+                    )
+                    if task.id in day_offsets
+                    else task
+                    for task in updated_input.tasks
+                ]
             }
         )
 
