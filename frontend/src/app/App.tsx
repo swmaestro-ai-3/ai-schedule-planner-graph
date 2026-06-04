@@ -67,10 +67,16 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      const next = await httpPlannerApi.createPlan(input);
-      setDraft(next);
-      setActiveStep("proposal");
-      return true;
+      const result = await httpPlannerApi.createPlan(input);
+      if (result.draft) {
+        setDraft(result.draft);
+        setActiveStep("proposal");
+        return true;
+      }
+      if (result.agentMessage) {
+        setNotice(result.agentMessage);
+      }
+      return false;
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "일정 생성 실패");
       return false;
@@ -83,7 +89,7 @@ export function App() {
     setBusy(true);
     setError(null);
     try {
-      return { draft: await httpPlannerApi.createPlan(input) };
+      return await httpPlannerApi.createPlan(input);
     } catch (exc) {
       const message = exc instanceof Error ? exc.message : "일정 생성 실패";
       setError(message);

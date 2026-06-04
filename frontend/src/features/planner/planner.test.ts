@@ -72,23 +72,25 @@ describe("planner frontend contracts", () => {
   });
 
   it("creates recurring reflection tasks from natural language", async () => {
-    const draft = await mockPlannerApi.createPlan({
+    const result = await mockPlannerApi.createPlan({
       mode: "natural",
       text: "매일 오후 11시에 하루 회고 일정으로 1시간 넣어줘",
       bufferRatio: 15,
     });
+    const draft = result.draft!;
 
     expect(draft.items.filter((item) => item.title === "하루 회고")).toHaveLength(7);
     expect(draft.items.some((item) => item.dayIndex === 6 && item.start === "23:00")).toBe(true);
   });
 
   it("moves a snoozed task during replan", async () => {
-    const draft = await mockPlannerApi.createPlan({
+    const result = await mockPlannerApi.createPlan({
       mode: "structured",
       bufferRatio: 15,
       fixedEvents: [],
       tasks: [],
     });
+    const draft = result.draft!;
     const before = draft.items.find((item) => item.id === "task-plan");
     const next = await mockPlannerApi.replan(draft, {
       reason: "기획서를 하루 뒤로",
@@ -136,12 +138,13 @@ describe("planner frontend contracts", () => {
   });
 
   it("summarizes an agent proposal before it is committed to the calendar", async () => {
-    const draft = await mockPlannerApi.createPlan({
+    const result = await mockPlannerApi.createPlan({
       mode: "structured",
       bufferRatio: 15,
       fixedEvents: [],
       tasks: [],
     });
+    const draft = result.draft!;
 
     expect(agentProposalSummary(draft)).toBe("고정 일정 4개, 작업 3개를 배치한 초안입니다.");
     expect(agentPreviewItems(draft, 2)).toEqual([
@@ -172,12 +175,13 @@ describe("planner frontend contracts", () => {
   });
 
   it("previews only changed agent proposal items with before and after values", async () => {
-    const draft = await mockPlannerApi.createPlan({
+    const result = await mockPlannerApi.createPlan({
       mode: "structured",
       bufferRatio: 15,
       fixedEvents: [],
       tasks: [],
     });
+    const draft = result.draft!;
     const next = {
       ...draft,
       items: draft.items.map((item) =>

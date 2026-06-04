@@ -29,13 +29,37 @@ describe("http planner api", () => {
       bufferRatio: 15,
     });
 
-    expect(result.reason).toBe("배치 완료");
+    expect(result.draft?.reason).toBe("배치 완료");
     expect(calls).toEqual([
       {
         url: "http://planner.test/api/plans",
         body: { mode: "natural", text: "매일 회고 넣어줘", bufferRatio: 15 },
       },
     ]);
+  });
+
+  it("normalizes message-only create responses from the backend", async () => {
+    const api = createHttpPlannerApi({
+      baseUrl: "http://planner.test",
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            agentMessage: "예: 월요일 15시에 운동 1시간처럼 말하면 됩니다.",
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const result = await api.createPlan({
+      mode: "natural",
+      text: "어떤 식으로 말하면 돼?",
+      bufferRatio: 15,
+    });
+
+    expect(result).toEqual({
+      draft: null,
+      agentMessage: "예: 월요일 15시에 운동 1시간처럼 말하면 됩니다.",
+    });
   });
 
   it("posts current draft and chat feedback to the replan endpoint", async () => {

@@ -29,6 +29,31 @@ def test_create_plan_response_runs_real_planner_for_natural_language():
     assert draft["backend"]["planInput"]["date"] == "2026-06-01"
 
 
+def test_create_plan_response_can_answer_without_draft_from_agent_chat(monkeypatch):
+    from backend.api import create_plan_response
+
+    def fake_parse_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        assert payload["input"] == "어떤 식으로 말하면 돼?"
+        return {
+            "assistant_message": "예: 월요일 15시에 운동 1시간, 목요일까지 기획서 2시간처럼 말하면 됩니다."
+        }
+
+    result = create_plan_response(
+        {
+            "mode": "natural",
+            "text": "어떤 식으로 말하면 돼?",
+            "bufferRatio": 15,
+        },
+        reference_date=date(2026, 6, 1),
+        sidecar=fake_parse_sidecar,
+    )
+
+    assert result == {
+        "agentMessage": "예: 월요일 15시에 운동 1시간, 목요일까지 기획서 2시간처럼 말하면 됩니다."
+    }
+
+
 def test_replan_response_applies_chat_snooze_to_existing_plan():
     from backend.api import create_plan_response, replan_response
 

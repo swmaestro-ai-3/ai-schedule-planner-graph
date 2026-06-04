@@ -19,7 +19,7 @@ def test_fake_sidecar_output_becomes_day_plan_input():
         assert payload["task"] == "parse_day_plan"
         assert "DayPlanInput" in payload["prompt"]
         assert payload["reference_date"] == "2026-06-02"
-        assert payload["output_schema"]["required"] == ["day_plan"]
+        assert payload["output_schema"]["required"] == []
         return {
             "day_plan": {
                 "date": "2026-06-03",
@@ -301,6 +301,9 @@ def test_day_plan_parse_payload_includes_prompt_schema_and_context():
     assert payload["reference_date"] == "2026-06-02"
     assert payload["timezone"] == "Asia/Seoul"
     assert "JSON만" in payload["prompt"]
+    assert "assistant_message" in payload["prompt"]
+    assert payload["output_schema"]["required"] == []
+    assert "assistant_message" in payload["output_schema"]["properties"]
     assert "fixed_events" in payload["output_schema"]["properties"]["day_plan"]["properties"]
     assert "tasks" in payload["output_schema"]["properties"]["day_plan"]["properties"]
 

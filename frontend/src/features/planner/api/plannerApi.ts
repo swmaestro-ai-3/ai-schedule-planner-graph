@@ -10,7 +10,7 @@ function cloneDraft(draft: PlannerDraft): PlannerDraft {
 }
 
 export interface PlannerApi {
-  createPlan(input: CreatePlanInput): Promise<PlannerDraft>;
+  createPlan(input: CreatePlanInput): Promise<PlannerMutationResult>;
   replan(draft: PlannerDraft, input: ReplanInput): Promise<PlannerMutationResult>;
   getOpenAIStatus(): Promise<OpenAIStatus>;
   connectOpenAI(): Promise<OpenAIConnectResult>;
@@ -72,8 +72,17 @@ export function createHttpPlannerApi(options: HttpPlannerApiOptions = {}): Plann
   const baseUrl = (options.baseUrl ?? defaultBaseUrl).replace(/\/$/, "");
   const fetcher = options.fetcher ?? fetch;
   return {
-    createPlan(input) {
-      return postJson<PlannerDraft>(baseUrl, fetcher, "/api/plans", input);
+    async createPlan(input) {
+      const payload = await postJson<PlannerDraft | { agentMessage: string }>(
+        baseUrl,
+        fetcher,
+        "/api/plans",
+        input,
+      );
+      if ("agentMessage" in payload) {
+        return { draft: null, agentMessage: payload.agentMessage };
+      }
+      return { draft: payload };
     },
     async replan(draft, input) {
       const payload = await postJson<PlannerDraft | { agentMessage: string }>(baseUrl, fetcher, "/api/replans", {
@@ -99,9 +108,9 @@ export const httpPlannerApi = createHttpPlannerApi();
 export const mockPlannerApi: PlannerApi = {
   async createPlan(input) {
     if (input.mode === "natural" && input.text.includes("회고")) {
-      return cloneDraft(reflectionDraft);
+      return { draft: cloneDraft(reflectionDraft) };
     }
-    return cloneDraft(defaultDraft);
+    return { draft: cloneDraft(defaultDraft) };
   },
 
   async replan(draft, input) {

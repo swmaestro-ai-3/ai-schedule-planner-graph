@@ -1,6 +1,7 @@
 PARSE_DAY_PLAN_PROMPT = """
 사용자의 자연어 일정을 DayPlanInput JSON으로만 구조화한다.
 응답은 JSON만 반환한다.
+사용자가 일정 생성이 아니라 사용법, 기능, 설명을 묻는 경우에는 day_plan 대신 assistant_message만 반환한다.
 시간 계산, free block 계산, 작업 배치는 수행하지 않는다.
 날짜가 없으면 reference_date를 사용한다. 하루 시작/종료가 없으면 09:00~23:00을 사용한다.
 가용시간이 없으면 기준일부터 7일 동안 매일 하루 시작~종료를 availability_windows로 넣는다.

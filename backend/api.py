@@ -6,7 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from planner.graph import build_planner_graph
-from planner.llm_parser import SidecarCallable, call_llm_sidecar, parse_natural_language_input
+from planner.llm_parser import (
+    LLMAssistantMessage,
+    SidecarCallable,
+    call_llm_sidecar,
+    parse_natural_language_input,
+)
 from planner.models import (
     AvailabilityWindow,
     DayPlanInput,
@@ -339,11 +344,14 @@ def create_plan_response(
     reference_date: date | None = None,
     sidecar: SidecarCallable | None = None,
 ) -> dict[str, Any]:
-    plan_input = _plan_input_from_request(
-        request,
-        reference_date=reference_date,
-        sidecar=sidecar,
-    )
+    try:
+        plan_input = _plan_input_from_request(
+            request,
+            reference_date=reference_date,
+            sidecar=sidecar,
+        )
+    except LLMAssistantMessage as exc:
+        return {"agentMessage": exc.message}
     state = build_planner_graph().invoke(
         {
             "parsed_input": plan_input,

@@ -23,6 +23,12 @@ class LLMParserError(RuntimeError):
     pass
 
 
+class LLMAssistantMessage(RuntimeError):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 SidecarCallable = Callable[[dict[str, Any]], dict[str, Any]]
 
 WEEKDAY_INDEXES = {
@@ -456,9 +462,10 @@ def build_day_plan_parse_payload(
         "timezone": timezone,
         "output_schema": {
             "type": "object",
-            "required": ["day_plan"],
+            "required": [],
             "properties": {
                 "day_plan": DayPlanInput.model_json_schema(),
+                "assistant_message": {"type": "string"},
             },
         },
     }
@@ -610,6 +617,9 @@ def parse_natural_language_input(
                     timezone=timezone,
                 )
             )
+            assistant_message = str(response.get("assistant_message") or "").strip()
+            if assistant_message and "day_plan" not in response:
+                raise LLMAssistantMessage(assistant_message)
             return DayPlanInput.model_validate(
                 _apply_day_plan_defaults(
                     response.get("day_plan", response),
