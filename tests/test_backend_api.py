@@ -357,6 +357,28 @@ def test_replan_response_can_answer_without_new_draft(monkeypatch):
     def fake_replan_sidecar(payload):
         assert payload["task"] == "interpret_rejection"
         assert payload["input"] == "고정 일정을 침범했어?"
+        assert payload["current_state"]["schedule_items"] == [
+            {
+                "type": "fixed",
+                "title": "팀 미팅",
+                "source_id": "fixed-1",
+                "day_offset": 0,
+                "start_time": "09:00",
+                "end_time": "10:00",
+                "start_offset": 0,
+                "end_offset": 60,
+            },
+            {
+                "type": "task",
+                "title": "기획서 작성",
+                "source_id": "task-1",
+                "day_offset": 0,
+                "start_time": "10:00",
+                "end_time": "11:00",
+                "start_offset": 60,
+                "end_offset": 120,
+            },
+        ]
         return {
             "replan_constraints": {
                 "assistant_message": "아니요. 현재 작업은 팀 미팅 시간과 겹치지 않습니다.",

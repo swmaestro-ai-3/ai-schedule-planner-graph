@@ -503,6 +503,7 @@ def _summarize_conversation(value: Any) -> list[dict[str, str]]:
 def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
     draft_plan = state.get("draft_plan")
     plan_input = state.get("parsed_input")
+    schedule_items = _summarize_schedule_items_for_rejection(state, plan_input)
     return {
         "replan_count": state.get("replan_count", 0),
         "date": plan_input.date.isoformat() if plan_input else None,
@@ -514,7 +515,17 @@ def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
             }
             for task in (plan_input.tasks if plan_input else [])
         ],
-        "schedule_items": [
+        "schedule_items": schedule_items,
+    }
+
+
+def _summarize_schedule_items_for_rejection(
+    state: dict[str, Any],
+    plan_input: DayPlanInput | None,
+) -> list[dict[str, Any]]:
+    draft_plan = state.get("draft_plan")
+    if draft_plan:
+        return [
             {
                 "type": item.type.value,
                 "title": item.title,
@@ -523,9 +534,37 @@ def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
                 "start_offset": item.start_offset,
                 "end_offset": item.end_offset,
             }
-            for item in (draft_plan.schedule_items if draft_plan else [])
-        ],
-    }
+            for item in draft_plan.schedule_items
+        ]
+
+    frontend_items = state.get("frontend_schedule_items")
+    if not isinstance(frontend_items, list):
+        return []
+    day_start_minutes = _time_text_to_minutes(
+        getattr(plan_input, "day_start", None),
+        time(9, 0),
+    )
+    summarized: list[dict[str, Any]] = []
+    for item in frontend_items:
+        if not isinstance(item, dict):
+            continue
+        start = str(item.get("start") or "")
+        end = str(item.get("end") or "")
+        start_minutes = _time_text_to_minutes(start, time(9, 0))
+        end_minutes = _time_text_to_minutes(end, time(9, 0))
+        summarized.append(
+            {
+                "type": item.get("type"),
+                "title": item.get("title"),
+                "source_id": item.get("id"),
+                "day_offset": item.get("dayIndex"),
+                "start_time": start,
+                "end_time": end,
+                "start_offset": start_minutes - day_start_minutes,
+                "end_offset": end_minutes - day_start_minutes,
+            }
+        )
+    return summarized
 
 
 def call_llm_sidecar(

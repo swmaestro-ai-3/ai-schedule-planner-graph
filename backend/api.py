@@ -392,6 +392,7 @@ def replan_response(
             "approval_status": "rejected",
             "rejection_reason": reason,
             "conversation": request.get("conversation") or [],
+            "frontend_schedule_items": draft.get("items") or [],
             "replan_count": int(draft.get("replanCount") or 0),
             "use_llm_replan": use_llm_replan,
         }
