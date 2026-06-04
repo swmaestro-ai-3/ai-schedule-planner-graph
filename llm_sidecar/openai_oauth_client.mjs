@@ -32,6 +32,9 @@ function formatPrompt(payload) {
   if (payload.current_state) {
     sections.push(`Current state: ${JSON.stringify(payload.current_state, null, 2)}`);
   }
+  if (payload.conversation) {
+    sections.push(`Conversation: ${JSON.stringify(payload.conversation, null, 2)}`);
+  }
   if (payload.output_schema) {
     sections.push(`Output schema: ${JSON.stringify(payload.output_schema, null, 2)}`);
   }

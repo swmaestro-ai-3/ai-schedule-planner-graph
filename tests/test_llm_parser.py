@@ -11,7 +11,7 @@ from planner.llm_parser import (
     interpret_rejection_reason,
     parse_natural_language_input,
 )
-from planner.models import DayPlanInput, ValidationIssue
+from planner.models import DayPlanInput, DraftPlan, ScheduleItem, ScheduleItemType, ValidationIssue
 
 
 def test_fake_sidecar_output_becomes_day_plan_input():
@@ -308,12 +308,47 @@ def test_day_plan_parse_payload_includes_prompt_schema_and_context():
 def test_rejection_interpretation_payload_asks_for_replan_constraints():
     payload = build_rejection_interpretation_payload(
         "너무 빡빡하니 여유 시간을 늘려줘",
-        current_state={"replan_count": 1},
+        current_state={
+            "replan_count": 1,
+            "draft_plan": DraftPlan(
+                schedule_items=[
+                    ScheduleItem(
+                        type=ScheduleItemType.TASK,
+                        title="기획서 작성",
+                        source_id="report",
+                        day_offset=3,
+                        start_offset=300,
+                        end_offset=420,
+                    )
+                ]
+            ),
+            "conversation": [
+                {"role": "user", "text": "기획서 작성 내일로 미뤄줘"},
+                {"role": "agent", "text": "초안을 준비했습니다."},
+                {"role": "user", "text": "그거 오후로 바꿔줘"},
+            ],
+        },
     )
 
     assert payload["task"] == "interpret_rejection"
     assert payload["input"] == "너무 빡빡하니 여유 시간을 늘려줘"
+    assert payload["conversation"] == [
+        {"role": "user", "text": "기획서 작성 내일로 미뤄줘"},
+        {"role": "agent", "text": "초안을 준비했습니다."},
+        {"role": "user", "text": "그거 오후로 바꿔줘"},
+    ]
     assert "ReplanConstraints" in payload["prompt"]
+    assert "conversation은 최근 채팅 맥락" in payload["prompt"]
+    assert payload["current_state"]["schedule_items"] == [
+        {
+            "type": "task",
+            "title": "기획서 작성",
+            "source_id": "report",
+            "day_offset": 3,
+            "start_offset": 300,
+            "end_offset": 420,
+        }
+    ]
     assert "buffer_ratio_delta" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "snoozed_task_days" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]
     assert "availability_overrides" in payload["output_schema"]["properties"]["replan_constraints"]["properties"]

@@ -391,6 +391,7 @@ def replan_response(
             "parsed_input": plan_input,
             "approval_status": "rejected",
             "rejection_reason": reason,
+            "conversation": request.get("conversation") or [],
             "replan_count": int(draft.get("replanCount") or 0),
             "use_llm_replan": use_llm_replan,
         }

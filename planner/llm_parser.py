@@ -468,11 +468,13 @@ def build_rejection_interpretation_payload(
     reason: str,
     current_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    state = current_state or {}
     return {
         "task": "interpret_rejection",
         "prompt": INTERPRET_REJECTION_PROMPT,
         "input": reason,
-        "current_state": _summarize_state_for_rejection(current_state or {}),
+        "conversation": _summarize_conversation(state.get("conversation")),
+        "current_state": _summarize_state_for_rejection(state),
         "output_schema": {
             "type": "object",
             "required": ["replan_constraints"],
@@ -481,6 +483,21 @@ def build_rejection_interpretation_payload(
             },
         },
     }
+
+
+def _summarize_conversation(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        return []
+    messages: list[dict[str, str]] = []
+    for item in value[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        text = str(item.get("text") or "").strip()
+        if role not in {"agent", "user"} or not text:
+            continue
+        messages.append({"role": role, "text": text[:500]})
+    return messages
 
 
 def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
@@ -502,6 +519,7 @@ def _summarize_state_for_rejection(state: dict[str, Any]) -> dict[str, Any]:
                 "type": item.type.value,
                 "title": item.title,
                 "source_id": item.source_id,
+                "day_offset": item.day_offset,
                 "start_offset": item.start_offset,
                 "end_offset": item.end_offset,
             }

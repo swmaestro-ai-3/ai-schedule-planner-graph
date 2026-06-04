@@ -54,6 +54,11 @@ describe("http planner api", () => {
       reason: "기획서 하루 뒤로",
       snoozeTaskId: "task-1",
       snoozeDays: 1,
+      conversation: [
+        { role: "user", text: "기획서 작성 내일로 미뤄줘" },
+        { role: "agent", text: "초안을 준비했습니다." },
+        { role: "user", text: "그거 오후로 바꿔줘" },
+      ],
     });
 
     expect(result.replanCount).toBe(1);
@@ -64,6 +69,11 @@ describe("http planner api", () => {
         reason: "기획서 하루 뒤로",
         snoozeTaskId: "task-1",
         snoozeDays: 1,
+        conversation: [
+          { role: "user", text: "기획서 작성 내일로 미뤄줘" },
+          { role: "agent", text: "초안을 준비했습니다." },
+          { role: "user", text: "그거 오후로 바꿔줘" },
+        ],
       },
     });
   });

@@ -1,6 +1,12 @@
 import { Bot, Check, LoaderCircle, RotateCcw, Send, X } from "lucide-react";
 import { useState } from "react";
-import type { CreatePlanInput, PlannerDraft, ReplanInput, ScheduleItem } from "../types/planner";
+import type {
+  AgentConversationMessage,
+  CreatePlanInput,
+  PlannerDraft,
+  ReplanInput,
+  ScheduleItem,
+} from "../types/planner";
 
 interface AgentChatProps {
   open: boolean;
@@ -52,6 +58,17 @@ export function agentResetState() {
 
 export function agentBusyCopy(hasDraft: boolean) {
   return hasDraft ? replanBusyCopy : createBusyCopy;
+}
+
+export function buildAgentReplanInput(
+  messages: AgentConversationMessage[],
+  reason: string,
+): ReplanInput {
+  return {
+    reason,
+    snoozeDays: 1,
+    conversation: [...messages, { role: "user", text: reason }],
+  };
 }
 
 export function agentProposalSummary(draft: PlannerDraft, previousDraft?: PlannerDraft | null) {
@@ -148,7 +165,7 @@ export function AgentChat({
     const startedAt = Date.now();
     const baseDraft = pendingDraft ?? draft;
     const result = baseDraft
-      ? await onReplanProposal(baseDraft, { reason: value, snoozeDays: 1 })
+      ? await onReplanProposal(baseDraft, buildAgentReplanInput(messages, value))
       : await onCreateProposal({ mode: "natural", text: value, bufferRatio: 15 });
 
     const remainingDelay = Math.max(0, MIN_TYPING_MS - (Date.now() - startedAt));

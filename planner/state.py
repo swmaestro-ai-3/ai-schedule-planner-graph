@@ -34,6 +34,7 @@ class PlannerState(TypedDict, total=False):
     explanation: str
     approval_status: str
     rejection_reason: str
+    conversation: list[dict[str, str]]
     replan_constraints: ReplanConstraints
     replan_count: int
     use_llm_replan: bool

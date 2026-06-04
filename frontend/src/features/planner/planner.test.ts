@@ -8,6 +8,7 @@ import {
 import { mockPlannerApi } from "./api/plannerApi";
 import {
   agentBusyCopy,
+  buildAgentReplanInput,
   agentPreviewItems,
   agentProposalChanges,
   agentProposalSummary,
@@ -98,6 +99,28 @@ describe("planner frontend contracts", () => {
     expect(before?.dayIndex).toBe(0);
     expect(after?.dayIndex).toBe(1);
     expect(next.replanCount).toBe(1);
+  });
+
+  it("builds replan input with recent chat context", () => {
+    expect(
+      buildAgentReplanInput(
+        [
+          { role: "agent", text: "원하는 일정을 말해 주세요." },
+          { role: "user", text: "기획서 작성 내일로 미뤄줘" },
+          { role: "agent", text: "초안을 준비했습니다." },
+        ],
+        "그거 오후로 바꿔줘",
+      ),
+    ).toEqual({
+      reason: "그거 오후로 바꿔줘",
+      snoozeDays: 1,
+      conversation: [
+        { role: "agent", text: "원하는 일정을 말해 주세요." },
+        { role: "user", text: "기획서 작성 내일로 미뤄줘" },
+        { role: "agent", text: "초안을 준비했습니다." },
+        { role: "user", text: "그거 오후로 바꿔줘" },
+      ],
+    });
   });
 
   it("uses explicit agent progress copy for create and replan states", () => {

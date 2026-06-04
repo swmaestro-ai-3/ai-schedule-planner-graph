@@ -15,9 +15,10 @@
     "frontend:preview": "npm run preview --workspace @nextplan/web -- --host 127.0.0.1 --port 5173",
     "backend:dev": "python3.11 -m backend.server --host 127.0.0.1 --port 8010",
     "test:frontend": "npm run test --workspace @nextplan/web -- --run",
+    "test:sidecar": "node --test llm_sidecar/*.test.mjs",
     "llm:proxy": "openai-oauth",
     "llm:sidecar": "node llm_sidecar/openai_oauth_client.mjs",
-    "test": "npm run test:python && npm run test:frontend",
+    "test": "npm run test:python && npm run test:frontend && npm run test:sidecar",
     "test:python": "pytest -q"
   },
   "dependencies": {

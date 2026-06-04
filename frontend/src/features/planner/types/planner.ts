@@ -56,8 +56,14 @@ export interface StructuredPlanInput {
 
 export type CreatePlanInput = NaturalPlanInput | StructuredPlanInput;
 
+export interface AgentConversationMessage {
+  role: "agent" | "user";
+  text: string;
+}
+
 export interface ReplanInput {
   reason: string;
   snoozeTaskId?: string;
   snoozeDays: number;
+  conversation?: AgentConversationMessage[];
 }
