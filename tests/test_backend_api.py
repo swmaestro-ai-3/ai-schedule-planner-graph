@@ -481,6 +481,56 @@ def test_replan_response_moves_fixed_event_when_chat_created_schedule(monkeypatc
     assert moved["end"] == "15:00"
 
 
+def test_replan_response_adds_fixed_event_from_chat_feedback(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "natural",
+            "text": "월요일부터 금요일까지 매일 15시에 운동 1시간 넣어줘",
+            "bufferRatio": 15,
+        },
+        reference_date=date(2026, 6, 8),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "notes": ["모델이 새 고정 일정 추가 제약을 누락했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "금요일 저녁에 회고 넣어줘",
+            "snoozeDays": 1,
+        }
+    )
+
+    added = [item for item in replanned["items"] if item["title"] == "회고"]
+    assert added == [
+        {
+            "id": "fixed-4-회고",
+            "type": "fixed",
+            "title": "회고",
+            "dayIndex": 4,
+            "start": "19:00",
+            "end": "20:00",
+            "durationMinutes": 60,
+            "note": "고정 일정입니다.",
+            "priority": None,
+        }
+    ]
+
+
 def test_replan_response_can_include_agent_message_with_draft(monkeypatch):
     from backend import api
     from backend.api import create_plan_response, replan_response

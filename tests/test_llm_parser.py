@@ -710,6 +710,36 @@ def test_rejection_reason_extracts_fixed_event_day_and_time_move_by_title():
     }
 
 
+def test_rejection_reason_adds_fixed_event_from_chat_request():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 8),
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+        fixed_events=[
+            FixedEvent(
+                id="fixed-workout",
+                title="운동",
+                day_offset=4,
+                start_time=time(15, 0),
+                end_time=time(16, 0),
+            )
+        ],
+        tasks=[],
+    )
+
+    constraints = interpret_rejection_reason(
+        "금요일 저녁에 회고 넣어줘",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert len(constraints.additional_fixed_events) == 1
+    event = constraints.additional_fixed_events[0]
+    assert event.title == "회고"
+    assert event.day_offset == 4
+    assert event.start_time == time(19, 0)
+    assert event.end_time == time(20, 0)
+
+
 def test_rejection_reason_extracts_task_duration_multiplier_by_title():
     plan_input = DayPlanInput(
         date=date(2026, 6, 3),

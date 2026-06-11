@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from planner.models import (
     AvailabilityWindow,
     DayPlanInput,
+    FixedEvent,
     ReplanConstraints,
     ValidationIssue,
 )
@@ -57,6 +58,15 @@ KOREAN_NUMBER_VALUES = {
 KOREAN_TIME_PATTERN = re.compile(
     r"(?:(오전|오후|저녁|밤|아침|새벽)\s*)?(\d{1,2})시(?!간)(?:\s*(\d{1,2})분)?"
 )
+
+DAYPART_DEFAULT_MINUTES = {
+    "아침": 9 * 60,
+    "오전": 10 * 60,
+    "오후": 14 * 60,
+    "저녁": 19 * 60,
+    "밤": 21 * 60,
+    "새벽": 6 * 60,
+}
 
 
 def _date_or_default(value: Any, fallback: date) -> date:
@@ -147,6 +157,16 @@ def _find_first_korean_time(raw_text: str) -> tuple[int, int, re.Match[str]] | N
     if match is None:
         return None
     return _korean_time_match_to_minutes(match), match.end(), match
+
+
+def _find_time_or_daypart(raw_text: str) -> tuple[int, int] | None:
+    time_match = _find_first_korean_time(raw_text)
+    if time_match is not None:
+        return time_match[0], time_match[1]
+    daypart_match = re.search(r"(아침|오전|오후|저녁|밤|새벽)", raw_text)
+    if daypart_match is None:
+        return None
+    return DAYPART_DEFAULT_MINUTES[daypart_match.group(1)], daypart_match.end()
 
 
 def _parse_duration_minutes(raw_text: str, default_minutes: int = 60) -> int:
@@ -898,6 +918,60 @@ def _extract_fixed_event_updates(
     return updates
 
 
+def _new_fixed_event_requested(reason: str) -> bool:
+    if _task_day_move_requested(reason):
+        return False
+    if any(marker in reason for marker in ("삭제", "취소", "빼", "제외", "완료")):
+        return False
+    return any(
+        marker in reason
+        for marker in ("넣어", "추가", "만들", "생성", "잡아", "일정")
+    )
+
+
+def _title_for_new_fixed_event(reason: str, time_end_index: int) -> str:
+    if time_end_index > 0:
+        title = _extract_title_after_time(reason, time_end_index)
+    else:
+        title = reason
+    title = re.sub(r"[월화수목금토일]요일?", "", title)
+    title = re.sub(r"(아침|오전|오후|저녁|밤|새벽)", "", title)
+    title = re.sub(r"(에|으로|로|일정|스케줄|캘린더|넣어줘|넣어|추가해줘|추가|만들어줘|만들|생성해줘|생성|잡아줘|잡아)", " ", title)
+    title = _strip_duration_words(title)
+    title = re.sub(r"\s+", " ", title).strip(" .,은는을를")
+    return title or "일정"
+
+
+def _extract_additional_fixed_events(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> list[FixedEvent]:
+    if not _new_fixed_event_requested(reason):
+        return []
+    plan_input = (current_state or {}).get("parsed_input")
+    if not isinstance(plan_input, DayPlanInput):
+        return []
+
+    day_offsets = _extract_day_offsets(reason, plan_input.date)
+    time_result = _find_time_or_daypart(reason)
+    if not day_offsets or time_result is None:
+        return []
+
+    start_minutes, time_end_index = time_result
+    duration_minutes = _parse_duration_minutes(reason)
+    title = _title_for_new_fixed_event(reason, time_end_index)
+    return [
+        FixedEvent(
+            id=f"fixed-{day_offset}-{title}",
+            title=title,
+            day_offset=day_offset,
+            start_time=_time_value_from_minutes(start_minutes),
+            end_time=_time_value_from_minutes(start_minutes + duration_minutes),
+        )
+        for day_offset in day_offsets
+    ]
+
+
 def _extract_duration_multiplier(reason: str) -> float | None:
     if "절반" in reason or "반으로" in reason:
         return 0.5
@@ -1046,6 +1120,9 @@ def _interpret_rejection_reason_with_rules(
     constraints.fixed_event_updates.update(
         _extract_fixed_event_updates(reason, current_state)
     )
+    constraints.additional_fixed_events.extend(
+        _extract_additional_fixed_events(reason, current_state)
+    )
     constraints.duration_multipliers.update(
         _extract_duration_multipliers(reason, current_state)
     )
@@ -1138,6 +1215,16 @@ def _merge_rule_constraints(
         updates["buffer_ratio_delta"] = rule_constraints.buffer_ratio_delta
     if rule_constraints.fixed_event_buffer_after > constraints.fixed_event_buffer_after:
         updates["fixed_event_buffer_after"] = rule_constraints.fixed_event_buffer_after
+    if rule_constraints.additional_fixed_events and not constraints.additional_fixed_events:
+        existing_ids = {event.id for event in constraints.additional_fixed_events}
+        updates["additional_fixed_events"] = [
+            *constraints.additional_fixed_events,
+            *[
+                event
+                for event in rule_constraints.additional_fixed_events
+                if event.id not in existing_ids
+            ],
+        ]
     if rule_constraints.snoozed_task_days:
         updates["snoozed_task_days"] = {
             **constraints.snoozed_task_days,
