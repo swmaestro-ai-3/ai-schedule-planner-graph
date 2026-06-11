@@ -440,6 +440,47 @@ def test_replan_response_can_update_existing_items_from_ai_chat(monkeypatch):
     assert task["durationMinutes"] == 90
 
 
+def test_replan_response_moves_fixed_event_when_chat_created_schedule(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "natural",
+            "text": "월요일 10시에 기획서 작성 1시간 넣어줘",
+            "bufferRatio": 0,
+        },
+        reference_date=date(2026, 6, 8),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def fake_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "notes": ["모델이 고정 일정 이동 제약을 누락했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", fake_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "기획서 작성을 화요일 오후 2시로 옮겨줘",
+            "snoozeDays": 1,
+        }
+    )
+
+    moved = next(item for item in replanned["items"] if item["title"] == "기획서 작성")
+    assert moved["type"] == "fixed"
+    assert moved["dayIndex"] == 1
+    assert moved["start"] == "14:00"
+    assert moved["end"] == "15:00"
+
+
 def test_replan_response_can_include_agent_message_with_draft(monkeypatch):
     from backend import api
     from backend.api import create_plan_response, replan_response

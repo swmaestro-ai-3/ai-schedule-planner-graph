@@ -679,6 +679,37 @@ def test_rejection_reason_extracts_task_day_and_time_move_by_title():
     assert constraints.preferred_windows == {"report": "14:00"}
 
 
+def test_rejection_reason_extracts_fixed_event_day_and_time_move_by_title():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 8),
+        day_start=time(9, 0),
+        day_end=time(23, 0),
+        fixed_events=[
+            FixedEvent(
+                id="fixed-report",
+                title="기획서 작성",
+                day_offset=0,
+                start_time=time(10, 0),
+                end_time=time(11, 0),
+            )
+        ],
+        tasks=[],
+    )
+
+    constraints = interpret_rejection_reason(
+        "기획서 작성을 화요일 오후 2시로 옮겨줘",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert constraints.fixed_event_updates == {
+        "fixed-report": {
+            "day_offset": 1,
+            "start_time": time(14, 0),
+            "end_time": time(15, 0),
+        }
+    }
+
+
 def test_rejection_reason_extracts_task_duration_multiplier_by_title():
     plan_input = DayPlanInput(
         date=date(2026, 6, 3),

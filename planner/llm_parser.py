@@ -739,6 +739,11 @@ def _tasks_from_state(current_state: dict[str, Any] | None) -> list[Any]:
     return list(getattr(plan_input, "tasks", []) or [])
 
 
+def _fixed_events_from_state(current_state: dict[str, Any] | None) -> list[Any]:
+    plan_input = (current_state or {}).get("parsed_input")
+    return list(getattr(plan_input, "fixed_events", []) or [])
+
+
 def _matching_task_ids_from_reason(
     reason: str,
     current_state: dict[str, Any] | None,
@@ -753,6 +758,23 @@ def _matching_task_ids_from_reason(
         return matched
     if len(tasks) == 1:
         return [tasks[0].id]
+    return []
+
+
+def _matching_fixed_event_ids_from_reason(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> list[str]:
+    events = _fixed_events_from_state(current_state)
+    matched = [
+        event.id
+        for event in events
+        if getattr(event, "title", "") and getattr(event, "title", "") in reason
+    ]
+    if matched:
+        return matched
+    if len(events) == 1 and not _tasks_from_state(current_state):
+        return [events[0].id]
     return []
 
 
@@ -821,6 +843,59 @@ def _extract_task_day_offsets(
         task_id: day_offsets[0]
         for task_id in _matching_task_ids_from_reason(reason, current_state)
     }
+
+
+def _time_value_from_minutes(total_minutes: int) -> time:
+    clamped = max(0, min(total_minutes, 24 * 60 - 1))
+    return time(clamped // 60, clamped % 60)
+
+
+def _extract_fixed_event_updates(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    if not _task_day_move_requested(reason):
+        return {}
+    plan_input = (current_state or {}).get("parsed_input")
+    if not isinstance(plan_input, DayPlanInput):
+        return {}
+
+    event_ids = _matching_fixed_event_ids_from_reason(reason, current_state)
+    if not event_ids:
+        return {}
+
+    day_offsets = _extract_day_offsets(reason, plan_input.date) or []
+    time_match = _find_first_korean_time(reason)
+    if not day_offsets and time_match is None:
+        return {}
+
+    events_by_id = {
+        event.id: event
+        for event in plan_input.fixed_events
+        if event.id in set(event_ids)
+    }
+    updates: dict[str, dict[str, Any]] = {}
+    for event_id in event_ids:
+        event = events_by_id.get(event_id)
+        if event is None:
+            continue
+        update: dict[str, Any] = {}
+        if len(day_offsets) == 1:
+            update["day_offset"] = day_offsets[0]
+        if time_match is not None:
+            start_minutes = time_match[0]
+            duration_minutes = max(
+                1,
+                _time_text_to_minutes(event.end_time, time(10, 0))
+                - _time_text_to_minutes(event.start_time, time(9, 0)),
+            )
+            update["start_time"] = _time_value_from_minutes(start_minutes)
+            update["end_time"] = _time_value_from_minutes(
+                start_minutes + duration_minutes
+            )
+        if update:
+            updates[event_id] = update
+    return updates
 
 
 def _extract_duration_multiplier(reason: str) -> float | None:
@@ -968,6 +1043,9 @@ def _interpret_rejection_reason_with_rules(
     constraints.task_day_offsets.update(
         _extract_task_day_offsets(reason, current_state)
     )
+    constraints.fixed_event_updates.update(
+        _extract_fixed_event_updates(reason, current_state)
+    )
     constraints.duration_multipliers.update(
         _extract_duration_multipliers(reason, current_state)
     )
@@ -1074,6 +1152,17 @@ def _merge_rule_constraints(
         updates["task_day_offsets"] = {
             **constraints.task_day_offsets,
             **rule_constraints.task_day_offsets,
+        }
+    if rule_constraints.fixed_event_updates:
+        updates["fixed_event_updates"] = {
+            event_id: {
+                **rule_constraints.fixed_event_updates.get(event_id, {}),
+                **constraints.fixed_event_updates.get(event_id, {}),
+            }
+            for event_id in (
+                set(constraints.fixed_event_updates)
+                | set(rule_constraints.fixed_event_updates)
+            )
         }
     if rule_constraints.duration_multipliers:
         updates["duration_multipliers"] = {
