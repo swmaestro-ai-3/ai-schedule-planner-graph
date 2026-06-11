@@ -784,8 +784,17 @@ def _matching_task_ids_from_reason(
 def _matching_fixed_event_ids_from_reason(
     reason: str,
     current_state: dict[str, Any] | None,
+    *,
+    day_offsets: list[int] | None = None,
 ) -> list[str]:
     events = _fixed_events_from_state(current_state)
+    if day_offsets:
+        day_set = set(day_offsets)
+        events = [
+            event
+            for event in events
+            if getattr(event, "day_offset", None) in day_set
+        ]
     matched = [
         event.id
         for event in events
@@ -870,6 +879,37 @@ def _time_value_from_minutes(total_minutes: int) -> time:
     return time(clamped // 60, clamped % 60)
 
 
+def _fixed_event_day_move_requested(reason: str) -> bool:
+    if not _task_day_move_requested(reason):
+        return False
+    if _extract_fixed_event_title_update(reason, None) is not None:
+        return False
+    return bool(re.search(r"[월화수목금토일]요일?", reason))
+
+
+def _extract_fixed_event_title_update(
+    reason: str,
+    current_state: dict[str, Any] | None,
+) -> str | None:
+    if not any(marker in reason for marker in ("바꿔", "변경", "수정")):
+        return None
+    match = re.search(r"[을를]\s*(.+?)(?:으로|로)\s*(?:바꿔|변경|수정)", reason)
+    if match is None:
+        return None
+    title = match.group(1).strip(" .,은는을를")
+    if not title:
+        return None
+    if re.search(r"[월화수목금토일]요일?|오전|오후|저녁|밤|아침|새벽|\d{1,2}시", title):
+        return None
+    existing_titles = {
+        getattr(event, "title", "")
+        for event in _fixed_events_from_state(current_state)
+    }
+    if title in existing_titles:
+        return None
+    return title
+
+
 def _extract_fixed_event_updates(
     reason: str,
     current_state: dict[str, Any] | None,
@@ -880,13 +920,19 @@ def _extract_fixed_event_updates(
     if not isinstance(plan_input, DayPlanInput):
         return {}
 
-    event_ids = _matching_fixed_event_ids_from_reason(reason, current_state)
+    day_offsets = _extract_day_offsets(reason, plan_input.date) or []
+    title_update = _extract_fixed_event_title_update(reason, current_state)
+    event_ids = _matching_fixed_event_ids_from_reason(
+        reason,
+        current_state,
+        day_offsets=day_offsets if title_update is not None else None,
+    )
     if not event_ids:
         return {}
 
-    day_offsets = _extract_day_offsets(reason, plan_input.date) or []
     time_match = _find_first_korean_time(reason)
-    if not day_offsets and time_match is None:
+    has_target_day = _fixed_event_day_move_requested(reason)
+    if not has_target_day and time_match is None and title_update is None:
         return {}
 
     events_by_id = {
@@ -900,7 +946,7 @@ def _extract_fixed_event_updates(
         if event is None:
             continue
         update: dict[str, Any] = {}
-        if len(day_offsets) == 1:
+        if len(day_offsets) == 1 and has_target_day:
             update["day_offset"] = day_offsets[0]
         if time_match is not None:
             start_minutes = time_match[0]
@@ -913,6 +959,8 @@ def _extract_fixed_event_updates(
             update["end_time"] = _time_value_from_minutes(
                 start_minutes + duration_minutes
             )
+        if title_update is not None:
+            update["title"] = title_update
         if update:
             updates[event_id] = update
     return updates
