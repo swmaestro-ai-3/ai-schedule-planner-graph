@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import Any
 
 from planner.explanations import build_rule_based_explanation
@@ -79,6 +79,36 @@ def _has_replan_changes(constraints: ReplanConstraints) -> bool:
             constraints.fixed_event_buffer_after,
             constraints.snoozed_task_days,
         ]
+    )
+
+
+def _time_from_minutes(total_minutes: int) -> time:
+    clamped = max(0, min(total_minutes, 24 * 60 - 1))
+    return time(clamped // 60, clamped % 60)
+
+
+def _expand_day_bounds_for_fixed_events(plan_input: Any) -> Any:
+    if not getattr(plan_input, "fixed_events", None):
+        return plan_input
+    day_start_minutes = time_to_minutes(plan_input.day_start)
+    day_end_minutes = time_to_minutes(plan_input.day_end)
+    event_start_minutes = [
+        time_to_minutes(event.start_time)
+        for event in plan_input.fixed_events
+    ]
+    event_end_minutes = [
+        time_to_minutes(event.end_time)
+        for event in plan_input.fixed_events
+    ]
+    next_start = min([day_start_minutes, *event_start_minutes])
+    next_end = max([day_end_minutes, *event_end_minutes])
+    if next_start == day_start_minutes and next_end == day_end_minutes:
+        return plan_input
+    return plan_input.model_copy(
+        update={
+            "day_start": _time_from_minutes(next_start),
+            "day_end": _time_from_minutes(next_end),
+        }
     )
 
 
@@ -307,6 +337,8 @@ def apply_replan_constraints_node(state: PlannerState) -> PlannerState:
                 ]
             }
         )
+
+    updated_input = _expand_day_bounds_for_fixed_events(updated_input)
 
     return {
         "parsed_input": updated_input,
