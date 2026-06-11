@@ -17,6 +17,7 @@ import {
   agentProposalSummary,
   agentResetButtonLabel,
   agentResetState,
+  shouldResetAgentChatForDraft,
 } from "./components/AgentChat";
 import { langGraphEdges, langGraphNodes, langGraphStats } from "./data/langGraphFlow";
 import { plannerSteps } from "./data/plannerSteps";
@@ -233,6 +234,8 @@ describe("planner frontend contracts", () => {
 
   it("resets the agent chat back to a fresh conversation state", () => {
     expect(agentResetButtonLabel).toBe("채팅 초기화");
+    expect(shouldResetAgentChatForDraft(null)).toBe(true);
+    expect(shouldResetAgentChatForDraft(defaultDraft)).toBe(false);
     expect(agentResetState()).toEqual({
       text: "",
       pendingDraft: null,

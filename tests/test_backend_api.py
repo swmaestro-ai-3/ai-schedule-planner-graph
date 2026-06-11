@@ -531,6 +531,55 @@ def test_replan_response_adds_fixed_event_from_chat_feedback(monkeypatch):
     ]
 
 
+def test_replan_response_merges_missing_recurring_events_from_ai_chat(monkeypatch):
+    from backend import api
+    from backend.api import create_plan_response, replan_response
+
+    draft = create_plan_response(
+        {
+            "mode": "natural",
+            "text": "월요일부터 금요일까지 매일 15시에 운동 1시간 넣어줘",
+            "bufferRatio": 15,
+        },
+        reference_date=date(2026, 6, 8),
+        sidecar=failing_sidecar,
+    )
+
+    monkeypatch.setattr(api, "check_openai_oauth_proxy", lambda: SimpleNamespace(connected=True))
+
+    def partial_replan_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "additional_fixed_events": [
+                    {
+                        "id": "fixed-0-회고",
+                        "title": "회고",
+                        "day_offset": 0,
+                        "start_time": "11:00",
+                        "end_time": "12:00",
+                    }
+                ],
+                "notes": ["모델이 첫 요일만 반환했습니다."],
+            }
+        }
+
+    monkeypatch.setattr("planner.nodes.call_llm_sidecar", partial_replan_sidecar)
+
+    replanned = replan_response(
+        {
+            "draft": draft,
+            "reason": "월요일 부터 금요일 모두 11시에 회고 넣어줘",
+            "snoozeDays": 1,
+        }
+    )
+
+    added = [item for item in replanned["items"] if item["title"] == "회고"]
+    assert [item["dayIndex"] for item in added] == [0, 1, 2, 3, 4]
+    assert all(item["start"] == "11:00" for item in added)
+    assert all(item["end"] == "12:00" for item in added)
+
+
 def test_replan_response_expands_day_end_for_late_daily_chat_event(monkeypatch):
     from backend import api
     from backend.api import create_plan_response, replan_response

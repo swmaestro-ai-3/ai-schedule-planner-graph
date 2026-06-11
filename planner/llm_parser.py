@@ -56,7 +56,7 @@ KOREAN_NUMBER_VALUES = {
 }
 
 KOREAN_TIME_PATTERN = re.compile(
-    r"(?:(오전|오후|저녁|밤|아침|새벽)\s*)?(\d{1,2})시(?!간)(?:\s*(\d{1,2})분)?"
+    r"(?:(오전|오후|저녁|밤|아침|새벽)\s*)?(\d{1,2})시(?!간)(?:\s*(?:(\d{1,2})분|반))?"
 )
 
 DAYPART_DEFAULT_MINUTES = {
@@ -127,10 +127,12 @@ def _korean_time_match_to_minutes(
     *,
     default_meridiem: str | None = None,
 ) -> int:
+    half_hour = match.group(3) is None and re.search(r"시\s*반", match.group(0))
     return _korean_time_parts_to_minutes(
         match.group(1),
         match.group(2),
         match.group(3),
+        half_hour=half_hour,
         default_meridiem=default_meridiem,
     )
 
@@ -140,11 +142,12 @@ def _korean_time_parts_to_minutes(
     hour_value: str,
     minute_value: str | None,
     *,
+    half_hour: bool = False,
     default_meridiem: str | None = None,
 ) -> int:
     meridiem = meridiem_value or default_meridiem
     hour = int(hour_value)
-    minute = int(minute_value or 0)
+    minute = 30 if half_hour else int(minute_value or 0)
     if meridiem in {"오후", "저녁", "밤"} and hour < 12:
         hour += 12
     if meridiem in {"오전", "새벽"} and hour == 12:
@@ -171,12 +174,16 @@ def _find_time_or_daypart(raw_text: str) -> tuple[int, int] | None:
 
 def _parse_duration_minutes(raw_text: str, default_minutes: int = 60) -> int:
     hour_match = re.search(
-        r"(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*시간(?:\s*(\d+)\s*분)?",
+        r"(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*시간(?:\s*(?:(\d+)\s*분|반))?",
         raw_text,
     )
     if hour_match:
         hours = _number_text_to_int(hour_match.group(1)) or 0
-        minutes = int(hour_match.group(2) or 0)
+        minutes = (
+            30
+            if re.search(r"시간\s*반", hour_match.group(0))
+            else int(hour_match.group(2) or 0)
+        )
         return max(1, hours * 60 + minutes)
     minute_match = re.search(r"(\d+)\s*분", raw_text)
     if minute_match:
@@ -186,7 +193,7 @@ def _parse_duration_minutes(raw_text: str, default_minutes: int = 60) -> int:
 
 def _strip_duration_words(value: str) -> str:
     cleaned = re.sub(
-        r"(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*시간(?:\s*\d+\s*분)?\s*(?:정도|쯤|가량)?",
+        r"(\d+|한|하나|두|둘|세|셋|네|넷|다섯|여섯)\s*시간(?:\s*(?:\d+\s*분|반))?\s*(?:정도|쯤|가량)?",
         "",
         value,
     )
@@ -215,9 +222,24 @@ def _unique_offsets(offsets: list[int]) -> list[int]:
     return sorted({offset for offset in offsets if 0 <= offset <= 6})
 
 
+def _extract_separated_weekday_offsets(raw_text: str) -> list[int] | None:
+    pattern = re.compile(
+        r"(?<![가-힣])"
+        r"[월화수목금토일](?:요일)?"
+        r"(?:(?:\s*[,/·]\s*|\s+)[월화수목금토일](?:요일)?)+"
+        r"(?![가-힣])"
+    )
+    for match in pattern.finditer(raw_text):
+        weekdays = re.findall(r"([월화수목금토일])(?:요일)?", match.group(0))
+        if len(weekdays) > 1:
+            return _unique_offsets([WEEKDAY_INDEXES[weekday] for weekday in weekdays])
+    return None
+
+
 def _extract_day_offsets(raw_text: str, reference_date: date) -> list[int] | None:
     range_match = re.search(
-        r"([월화수목금토일])요일부터\s*([월화수목금토일])요일(?:까지|[^\n]*(?:모두|전부|매일))",
+        r"([월화수목금토일])(?:요일)?\s*부터\s*"
+        r"([월화수목금토일])(?:요일)?\s*(?:까지|모두|전부|매일)",
         raw_text,
     )
     if range_match:
@@ -252,6 +274,10 @@ def _extract_day_offsets(raw_text: str, reference_date: date) -> list[int] | Non
     for token, offsets in shorthand_offsets.items():
         if token in raw_text:
             return offsets
+
+    separated_offsets = _extract_separated_weekday_offsets(raw_text)
+    if separated_offsets:
+        return separated_offsets
 
     weekday_names = re.findall(r"([월화수목금토일])요일", raw_text)
     if weekday_names:
@@ -986,7 +1012,7 @@ def _title_for_new_fixed_event(reason: str, time_end_index: int) -> str:
     title = re.sub(r"(아침|오전|오후|저녁|밤|새벽)", "", title)
     title = re.sub(r"(에|으로|로|일정|스케줄|캘린더|넣어줘|넣어|추가해줘|추가|만들어줘|만들|생성해줘|생성|잡아줘|잡아)", " ", title)
     title = _strip_duration_words(title)
-    title = re.sub(r"\s+", " ", title).strip(" .,은는을를")
+    title = re.sub(r"\s+", " ", title).strip(" .,은는을를도")
     return title or "일정"
 
 
@@ -1263,14 +1289,20 @@ def _merge_rule_constraints(
         updates["buffer_ratio_delta"] = rule_constraints.buffer_ratio_delta
     if rule_constraints.fixed_event_buffer_after > constraints.fixed_event_buffer_after:
         updates["fixed_event_buffer_after"] = rule_constraints.fixed_event_buffer_after
-    if rule_constraints.additional_fixed_events and not constraints.additional_fixed_events:
+    if rule_constraints.additional_fixed_events:
         existing_ids = {event.id for event in constraints.additional_fixed_events}
+        existing_event_keys = {
+            (event.day_offset, event.title, event.start_time, event.end_time)
+            for event in constraints.additional_fixed_events
+        }
         updates["additional_fixed_events"] = [
             *constraints.additional_fixed_events,
             *[
                 event
                 for event in rule_constraints.additional_fixed_events
                 if event.id not in existing_ids
+                and (event.day_offset, event.title, event.start_time, event.end_time)
+                not in existing_event_keys
             ],
         ]
     if rule_constraints.snoozed_task_days:

@@ -1,5 +1,5 @@
 import { Bot, Check, LoaderCircle, RotateCcw, Send, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   AgentConversationMessage,
   CreatePlanInput,
@@ -56,6 +56,10 @@ export function agentResetState() {
     pendingDraft: null,
     messages: [{ ...initialAgentMessage }],
   };
+}
+
+export function shouldResetAgentChatForDraft(draft: PlannerDraft | null) {
+  return draft === null;
 }
 
 export function agentBusyCopy(hasDraft: boolean) {
@@ -174,6 +178,15 @@ export function AgentChat({
       : pendingDraft
         ? agentPreviewItems(pendingDraft)
         : [];
+
+  useEffect(() => {
+    if (!shouldResetAgentChatForDraft(draft)) return;
+    const nextState = agentResetState();
+    setText(nextState.text);
+    setPendingDraft(nextState.pendingDraft);
+    setMessages(nextState.messages);
+    setTyping(false);
+  }, [draft]);
 
   const submit = async () => {
     const value = text.trim();

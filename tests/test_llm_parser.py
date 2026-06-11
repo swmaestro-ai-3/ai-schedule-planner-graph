@@ -131,6 +131,40 @@ def test_natural_language_parse_expands_weekday_recurring_fixed_events():
     assert all(event.end_time == time(16, 0) for event in result.fixed_events)
 
 
+@pytest.mark.parametrize(
+    "raw_text",
+    [
+        "월요일 부터 금요일 모두 11시에 회고 넣어줘",
+        "월요일부터 금요일 전부 11시에 회고 넣어줘",
+    ],
+)
+def test_natural_language_parse_expands_spaced_weekday_ranges(raw_text):
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-11",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        raw_text,
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 11),
+    )
+
+    assert result.date == date(2026, 6, 8)
+    assert [event.day_offset for event in result.fixed_events] == [0, 1, 2, 3, 4]
+    assert [event.title for event in result.fixed_events] == ["회고"] * 5
+    assert all(event.start_time == time(11, 0) for event in result.fixed_events)
+    assert all(event.end_time == time(12, 0) for event in result.fixed_events)
+
+
 def test_natural_language_parse_expands_daily_late_routine_from_text():
     def fake_sidecar(payload):
         assert payload["task"] == "parse_day_plan"
@@ -212,6 +246,70 @@ def test_natural_language_parse_expands_weekday_shorthand_routine():
     assert [event.title for event in result.fixed_events] == ["헬스", "헬스"]
     assert all(event.start_time == time(19, 0) for event in result.fixed_events)
     assert all(event.end_time == time(20, 0) for event in result.fixed_events)
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "expected_offsets"),
+    [
+        ("이번 주 월, 수, 금 저녁 8시에 회고 넣어줘", [0, 2, 4]),
+        ("월/수/금 오후 8시에 회고 넣어줘", [0, 2, 4]),
+        ("월 수 금 오후 8시에 회고 넣어줘", [0, 2, 4]),
+    ],
+)
+def test_natural_language_parse_expands_separated_weekday_lists(
+    raw_text,
+    expected_offsets,
+):
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        raw_text,
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert result.date == date(2026, 6, 1)
+    assert [event.day_offset for event in result.fixed_events] == expected_offsets
+    assert [event.title for event in result.fixed_events] == ["회고"] * len(expected_offsets)
+    assert all(event.start_time == time(20, 0) for event in result.fixed_events)
+    assert all(event.end_time == time(21, 0) for event in result.fixed_events)
+
+
+def test_natural_language_parse_handles_half_hour_start_and_duration():
+    def fake_sidecar(payload):
+        assert payload["task"] == "parse_day_plan"
+        return {
+            "day_plan": {
+                "date": "2026-06-03",
+                "day_start": "09:00",
+                "day_end": "23:00",
+                "availability_windows": [],
+                "fixed_events": [],
+                "tasks": [],
+            }
+        }
+
+    result = parse_natural_language_input(
+        "화요일 오후 8시 반에 독서 1시간 반 넣어줘",
+        sidecar=fake_sidecar,
+        reference_date=date(2026, 6, 3),
+    )
+
+    assert [event.day_offset for event in result.fixed_events] == [1]
+    assert result.fixed_events[0].title == "독서"
+    assert result.fixed_events[0].start_time == time(20, 30)
+    assert result.fixed_events[0].end_time == time(22, 0)
 
 
 def test_natural_language_parse_uses_rule_fallback_when_sidecar_fails():
@@ -782,6 +880,43 @@ def test_rejection_reason_adds_fixed_events_for_weekday_range_without_until_suff
     constraints = interpret_rejection_reason(
         "월요일부터 금요일 모두 11시에 회고 넣어줘",
         current_state={"parsed_input": plan_input},
+    )
+
+    assert [event.day_offset for event in constraints.additional_fixed_events] == [0, 1, 2, 3, 4]
+    assert all(event.title == "회고" for event in constraints.additional_fixed_events)
+    assert all(event.start_time == time(11, 0) for event in constraints.additional_fixed_events)
+
+
+def test_ai_rejection_interpreter_merges_missing_recurring_fixed_events_from_rules():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 8),
+        day_start=time(9, 0),
+        day_end=time(23, 59),
+        fixed_events=[],
+        tasks=[],
+    )
+
+    def partial_sidecar(payload):
+        assert payload["task"] == "interpret_rejection"
+        return {
+            "replan_constraints": {
+                "additional_fixed_events": [
+                    {
+                        "id": "fixed-0-회고",
+                        "title": "회고",
+                        "day_offset": 0,
+                        "start_time": "11:00",
+                        "end_time": "12:00",
+                    }
+                ],
+                "notes": ["모델이 첫 요일만 반환했습니다."],
+            }
+        }
+
+    constraints = interpret_rejection_reason(
+        "월요일 부터 금요일 모두 11시에 회고 넣어줘",
+        current_state={"parsed_input": plan_input},
+        sidecar=partial_sidecar,
     )
 
     assert [event.day_offset for event in constraints.additional_fixed_events] == [0, 1, 2, 3, 4]
