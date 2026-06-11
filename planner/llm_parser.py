@@ -217,7 +217,7 @@ def _unique_offsets(offsets: list[int]) -> list[int]:
 
 def _extract_day_offsets(raw_text: str, reference_date: date) -> list[int] | None:
     range_match = re.search(
-        r"([월화수목금토일])요일부터\s*([월화수목금토일])요일까지",
+        r"([월화수목금토일])요일부터\s*([월화수목금토일])요일(?:까지|[^\n]*(?:모두|전부|매일))",
         raw_text,
     )
     if range_match:

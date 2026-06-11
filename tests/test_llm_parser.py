@@ -770,6 +770,25 @@ def test_rejection_reason_adds_fixed_event_from_chat_request():
     assert event.end_time == time(20, 0)
 
 
+def test_rejection_reason_adds_fixed_events_for_weekday_range_without_until_suffix():
+    plan_input = DayPlanInput(
+        date=date(2026, 6, 8),
+        day_start=time(9, 0),
+        day_end=time(23, 59),
+        fixed_events=[],
+        tasks=[],
+    )
+
+    constraints = interpret_rejection_reason(
+        "월요일부터 금요일 모두 11시에 회고 넣어줘",
+        current_state={"parsed_input": plan_input},
+    )
+
+    assert [event.day_offset for event in constraints.additional_fixed_events] == [0, 1, 2, 3, 4]
+    assert all(event.title == "회고" for event in constraints.additional_fixed_events)
+    assert all(event.start_time == time(11, 0) for event in constraints.additional_fixed_events)
+
+
 def test_rejection_reason_extracts_task_duration_multiplier_by_title():
     plan_input = DayPlanInput(
         date=date(2026, 6, 3),
